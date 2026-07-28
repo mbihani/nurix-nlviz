@@ -65,10 +65,11 @@ class GenieVizAgent:
             yield _make_event({"type": "thinking", "text": "Connecting to Genie..."})
 
             # Build MCP client — NOT a context manager in langchain-mcp-adapters 0.1.0+
+            # Databricks Genie MCP uses streamable HTTP (POST-based), not legacy SSE (GET-based)
             mcp_client = MultiServerMCPClient(
                 {
                     "genie": {
-                        "transport": "sse",
+                        "transport": "streamable_http",
                         "url": self.config.genie_mcp_url,
                         "headers": {"Authorization": f"Bearer {token}"},
                     }
