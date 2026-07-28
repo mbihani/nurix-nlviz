@@ -20,7 +20,10 @@ from .chart_router import pick_chart_type, pick_chart_type_with_llm
 from .config import AppConfig
 from .logger import logger
 
-mlflow.langchain.autolog()
+try:
+    mlflow.langchain.autolog()
+except Exception:
+    pass  # mlflow autolog is best-effort; don't crash if langchain version unsupported
 
 
 def _make_event(data: dict) -> str:
