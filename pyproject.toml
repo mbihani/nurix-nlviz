@@ -1,0 +1,68 @@
+[project]
+name = "nurix-nlviz"
+dynamic = ["version"]
+description = "NL-to-Viz chat app connected to Genie Space with Recharts and Lakebase-persisted pinned charts"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.119.0",
+    "pydantic-settings>=2.11.0",
+    "uvicorn>=0.37.0",
+    "databricks-sdk>=0.74.0",
+    "langchain-mcp-adapters>=0.1.0",
+    "langgraph>=0.3.0",
+    "langchain-anthropic>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "mlflow>=2.18.0",
+    "psycopg2-binary>=2.9.0",
+    "python-dotenv>=1.0.0",
+    "sse-starlette>=2.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "ty>=0.0.12",
+    "apx==0.2.6",
+]
+
+[tool.apx.metadata]
+app-name = "nurix-nlviz"
+app-slug = "nurix_nlviz"
+app-entrypoint = "nurix_nlviz.backend.app:app"
+api-prefix = "/api"
+metadata-path = "src/nurix_nlviz/_metadata.py"
+
+[tool.apx.ui]
+root = "src/nurix_nlviz/ui"
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+fallback-version = "0.0.0"
+
+[tool.uv]
+
+[[tool.uv.index]]
+name = "apx-index"
+url = "https://databricks-solutions.github.io/apx/simple"
+
+[tool.uv.sources]
+
+[tool.uv.sources.apx]
+index = "apx-index"
+
+[tool.hatch.build.hooks.version]
+path = "src/nurix_nlviz/_version.py"
+template = '''
+version = "{version}"
+'''
+
+[tool.hatch.build]
+artifacts = ["src/nurix_nlviz/__dist__", "src/nurix_nlviz/_metadata.py"]
+exclude = ["src/nurix_nlviz/ui"]

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+*.egg-info/
+dist/
+dist_wheel/
+*.whl
+uv.lock
+
+# Build artifacts
+src/nurix_nlviz/__dist__/
+node_modules/
+bun.lock
+.apx/
+
+# Editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Test
+test-results/
+playwright-report/

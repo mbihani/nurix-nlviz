@@ -1,0 +1,20 @@
+bundle:
+  name: nurix-nlviz
+
+workspace:
+  host: https://fevm-stable-classic-7ppxjq.cloud.databricks.com
+  profile: fevm-stable
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://fevm-stable-classic-7ppxjq.cloud.databricks.com
+      profile: fevm-stable
+
+  prod:
+    mode: production
+    workspace:
+      host: https://fevm-stable-classic-7ppxjq.cloud.databricks.com
+      profile: fevm-stable

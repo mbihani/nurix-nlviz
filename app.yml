@@ -1,0 +1,43 @@
+command: ["uvicorn", "nurix_nlviz.backend.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+env:
+  # CONFIGURE(DATABRICKS_HOST) — Databricks workspace URL
+  - name: DATABRICKS_HOST
+    value: https://fevm-stable-classic-7ppxjq.cloud.databricks.com
+  # CONFIGURE(GENIE_SPACE_ID) — Genie Space ID for NL queries
+  - name: GENIE_SPACE_ID
+    value: 01f11dcb53181defb69ee49bd73bca10
+  # CONFIGURE(SQL_WAREHOUSE_ID) — SQL Warehouse for fallback SQL execution
+  - name: SQL_WAREHOUSE_ID
+    value: 24b0352e1b0dca66
+  # CONFIGURE(AI_GATEWAY_ENDPOINT) — AI Gateway endpoint name
+  - name: AI_GATEWAY_ENDPOINT
+    value: enterpret-ai-gateway
+  # CONFIGURE(CLAUDE_MODEL) — Claude model alias on the gateway
+  - name: CLAUDE_MODEL
+    value: databricks-claude-sonnet-5
+  - name: MLFLOW_TRACKING_URI
+    value: databricks
+  # CONFIGURE(MLFLOW_EXPERIMENT) — MLflow experiment for tracing
+  - name: MLFLOW_EXPERIMENT
+    value: nurix-nlviz-traces
+  # CONFIGURE(DB_TYPE) — "lakebase" or "sqlite" fallback
+  - name: DB_TYPE
+    value: lakebase
+  # CONFIGURE(LAKEBASE_INSTANCE) — Lakebase instance name (used by SDK)
+  - name: LAKEBASE_INSTANCE
+    value: nurix-nlviz-db
+  # CONFIGURE(LAKEBASE_DATABASE) — Lakebase database name
+  - name: LAKEBASE_DATABASE
+    value: databricks_postgres
+resources:
+  - name: nurix-nlviz-db
+    resource_type: database_instance
+    permission: CAN_CONNECT_AND_CREATE
+  - name: enterpret-genie-space
+    resource_type: genie_space
+    id: 01f11dcb53181defb69ee49bd73bca10
+    permission: CAN_RUN
+  - name: ai-gateway
+    resource_type: serving_endpoint
+    name: enterpret-ai-gateway
+    permission: CAN_QUERY
