@@ -35,6 +35,10 @@ class AppConfig(BaseSettings):
         default="enterpret-ai-gateway",
         validation_alias="AI_GATEWAY_ENDPOINT",
     )
+    ai_gateway_url: str = Field(
+        default="https://7474660648944264.ai-gateway.cloud.databricks.com/mlflow/v1",
+        validation_alias="AI_GATEWAY_URL",
+    )
     claude_model: str = Field(
         default="databricks-claude-sonnet-5",
         validation_alias="CLAUDE_MODEL",
@@ -67,5 +71,4 @@ class AppConfig(BaseSettings):
 
     @property
     def ai_gateway_base_url(self) -> str:
-        host = self.databricks_host.rstrip("/")
-        return f"{host}/serving-endpoints/{self.ai_gateway_endpoint}/invocations"
+        return self.ai_gateway_url
