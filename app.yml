@@ -23,7 +23,7 @@ env:
   # CONFIGURE(DB_TYPE) — "lakebase" or "sqlite" fallback
   - name: DB_TYPE
     value: lakebase
-  # CONFIGURE(LAKEBASE_INSTANCE) — Lakebase instance name (used by SDK)
+  # CONFIGURE(LAKEBASE_INSTANCE) — Lakebase instance name
   - name: LAKEBASE_INSTANCE
     value: nurix-nlviz-db
   # CONFIGURE(LAKEBASE_DATABASE) — Lakebase database name
@@ -39,5 +39,5 @@ resources:
     permission: CAN_RUN
   - name: ai-gateway
     resource_type: serving_endpoint
-    name: enterpret-ai-gateway
+    serving_endpoint_name: enterpret-ai-gateway
     permission: CAN_QUERY
