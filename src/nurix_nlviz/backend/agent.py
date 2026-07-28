@@ -148,53 +148,60 @@ class GenieVizAgent:
             async for chunk in agent.astream(
                 {"messages": [{"role": "user", "content": question}]}
             ):
-                # Extract tool results (SQL + data) from agent messages
-                if "messages" in chunk:
-                    for msg in chunk["messages"]:
-                        # Tool calls on the agent side
-                        if hasattr(msg, "tool_calls"):
-                            for tc in (msg.tool_calls or []):
+                # Tool results arrive in the "tools" key as ToolMessage objects
+                # Agent messages (AIMessage) arrive in the "agent" key
+                for chunk_key in ("tools", "messages"):
+                    if chunk_key not in chunk:
+                        continue
+                    val = chunk[chunk_key]
+                    msgs = val.get("messages", []) if isinstance(val, dict) else []
+                    for msg in msgs:
+                        msg_type = type(msg).__name__
+
+                        # AIMessage — tool call announcements and final answers
+                        if msg_type == "AIMessage":
+                            for tc in (getattr(msg, "tool_calls", None) or []):
                                 if "genie" in tc.get("name", "").lower() or "query" in tc.get("name", "").lower():
                                     yield _make_event({"type": "thinking", "text": "Querying your data..."})
 
-                        # Tool results
-                        content = getattr(msg, "content", None)
-                        if content and isinstance(content, str) and len(content) > 20:
-                            # Try to extract SQL
-                            if "SELECT" in content.upper() and collected_sql is None:
-                                lines = content.split("\n")
-                                sql_lines = []
-                                in_sql = False
-                                for line in lines:
-                                    if line.strip().upper().startswith("SELECT"):
-                                        in_sql = True
-                                    if in_sql:
-                                        sql_lines.append(line)
-                                        if line.strip().endswith(";") or (line.strip() == "" and sql_lines):
+                            content = getattr(msg, "content", "")
+                            if content and isinstance(content, str) and not getattr(msg, "tool_calls", None):
+                                if "SELECT" in content.upper() and collected_sql is None:
+                                    for line in content.split("\n"):
+                                        if line.strip().upper().startswith("SELECT"):
+                                            collected_sql = line.strip()
+                                            yield _make_event({"type": "sql", "sql": collected_sql})
                                             break
-                                if sql_lines:
-                                    collected_sql = "\n".join(sql_lines).strip()
-                                    yield _make_event({"type": "sql", "sql": collected_sql})
 
-                            # Try to parse tabular data from tool message
-                            if hasattr(msg, "name") and msg.name and collected_rows is None:
-                                parsed = _try_parse_genie_result(content)
-                                if parsed:
-                                    collected_columns, collected_rows = parsed
-                                    yield _make_event({
-                                        "type": "rows",
-                                        "columns": collected_columns,
-                                        "rows": collected_rows[:100],
-                                    })
+                        # ToolMessage — Genie query result
+                        elif msg_type == "ToolMessage" and getattr(msg, "name", None):
+                            raw_content = getattr(msg, "content", None)
+                            logger.info(f"GENIE_TOOL_RESULT type={type(raw_content).__name__} preview={str(raw_content)[:200]}")
 
-                # Final agent answer
+                            parsed = _try_parse_genie_result(raw_content)
+                            if parsed and collected_rows is None:
+                                collected_columns, collected_rows = parsed
+                                yield _make_event({
+                                    "type": "rows",
+                                    "columns": collected_columns,
+                                    "rows": collected_rows[:100],
+                                })
+
+                            # Also extract SQL from the tool result text
+                            if collected_sql is None:
+                                text = _extract_text(raw_content)
+                                if "SELECT" in text.upper():
+                                    for line in text.split("\n"):
+                                        if line.strip().upper().startswith("SELECT"):
+                                            collected_sql = line.strip()
+                                            yield _make_event({"type": "sql", "sql": collected_sql})
+                                            break
+
+                # Also check top-level "agent" key for final answer
                 if "agent" in chunk:
-                    agent_msgs = chunk["agent"].get("messages", [])
-                    for msg in agent_msgs:
+                    for msg in chunk["agent"].get("messages", []):
                         content = getattr(msg, "content", "")
                         if content and isinstance(content, str) and not getattr(msg, "tool_calls", None):
-                            # This is the final answer
-                            # Extract SQL from final message if not found yet
                             if "SELECT" in content.upper() and collected_sql is None:
                                 for line in content.split("\n"):
                                     if line.strip().upper().startswith("SELECT"):
@@ -205,11 +212,6 @@ class GenieVizAgent:
             # Emit chart after collecting rows
             if collected_rows is not None and collected_columns is not None:
                 chart_type, chart_config = pick_chart_type(collected_columns)
-
-                # Use LLM if columns are ambiguous (no clear rule hit)
-                if chart_type == "bar" and collected_sql and len(collected_columns) <= 2:
-                    pass  # bar is a safe default
-
                 chart_data = _rows_to_chart_data(collected_columns, collected_rows)
                 yield _make_event({
                     "type": "chart",
@@ -221,7 +223,6 @@ class GenieVizAgent:
                     "rows": collected_rows[:100],
                 })
             elif collected_sql:
-                # We have SQL but no rows parsed — still send a done event
                 yield _make_event({"type": "thinking", "text": "Processing results..."})
 
             yield _make_event({"type": "done"})
@@ -245,42 +246,101 @@ async def run_chat_agent(
         yield chunk
 
 
-def _try_parse_genie_result(content: str) -> tuple[list[dict], list[list]] | None:
+def _extract_text(content) -> str:
+    """Flatten content (str or list of content blocks) to a plain string."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(
+            b.get("text", "") if isinstance(b, dict) else str(b)
+            for b in content
+        )
+    return ""
+
+
+def _try_parse_genie_result(content) -> tuple[list[dict], list[list]] | None:
     """
-    Try to parse columns and rows from a Genie tool result string.
-    Genie typically returns JSON with columns/rows or a markdown table.
+    Parse columns and rows from a Genie MCP tool result.
+
+    Handles:
+    - List of content blocks: [{"type": "text", "text": "<json>"}]  (Shape A — streamable_http)
+    - Direct JSON string (Shape B)
+    - Genie native {"content": {"queryAttachments": [{"statement_response": ...}]}} (Shape C)
+    - {"columns": [...], "rows": [...]} (Shape D)
+    - {"result": {"columns": [...], "rows": [...]}} (Shape E)
+    - List of row dicts (Shape F)
+    - Markdown table fallback
     """
-    # Try JSON parse first
+    # Shape A — list of content blocks; recurse into each text block
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                result = _try_parse_genie_result(block["text"])
+                if result:
+                    return result
+        return None
+
+    if not isinstance(content, str) or len(content) < 10:
+        return None
+
+    # Try JSON parse
     try:
         data = json.loads(content)
-        if isinstance(data, dict):
-            if "columns" in data and "rows" in data:
-                cols = [{"name": c, "type": "string"} for c in data["columns"]]
-                return cols, data["rows"]
-            if "result" in data:
-                inner = data["result"]
-                if isinstance(inner, dict) and "columns" in inner:
-                    cols = [{"name": c.get("name", c) if isinstance(c, dict) else c, "type": c.get("type", "string") if isinstance(c, dict) else "string"} for c in inner["columns"]]
-                    return cols, inner.get("rows", [])
+
+        # Shape C — Genie native: {"content": {"queryAttachments": [...]}}
+        if isinstance(data, dict) and "content" in data:
+            attachments = data["content"].get("queryAttachments", [])
+            for att in attachments:
+                sr = att.get("statement_response", {})
+                if sr.get("status", {}).get("state") != "SUCCEEDED":
+                    continue
+                manifest = sr.get("manifest", {})
+                result = sr.get("result", {})
+                schema_cols = manifest.get("schema", {}).get("columns", [])
+                data_array = result.get("data_array", [])  # JSON_ARRAY format
+                if schema_cols and data_array:
+                    cols = [{"name": c["name"], "type": c.get("type_text", "string")}
+                            for c in schema_cols]
+                    rows = []
+                    for row_obj in data_array:
+                        vals = [v.get("string_value") for v in row_obj.get("values", [])]
+                        rows.append(vals)
+                    return cols, rows
+
+        # Shape D — {"columns": [...], "rows": [...]}
+        if isinstance(data, dict) and "columns" in data and "rows" in data:
+            cols = [{"name": c if isinstance(c, str) else c.get("name", str(c)), "type": "string"}
+                    for c in data["columns"]]
+            return cols, data["rows"]
+
+        # Shape E — {"result": {"columns": [...], "rows": [...]}}
+        if isinstance(data, dict) and "result" in data:
+            inner = data["result"]
+            if isinstance(inner, dict) and "columns" in inner:
+                cols = [{"name": c.get("name", c) if isinstance(c, dict) else c,
+                         "type": c.get("type", "string") if isinstance(c, dict) else "string"}
+                        for c in inner["columns"]]
+                return cols, inner.get("rows", [])
+
+        # Shape F — list of row dicts
         if isinstance(data, list) and data and isinstance(data[0], dict):
             cols = [{"name": k, "type": "string"} for k in data[0].keys()]
             rows = [[r.get(c["name"]) for c in cols] for r in data]
             return cols, rows
+
     except (json.JSONDecodeError, ValueError):
         pass
 
-    # Try markdown table
+    # Markdown table fallback
     lines = [l.strip() for l in content.split("\n") if "|" in l]
     if len(lines) >= 2:
         headers = [h.strip() for h in lines[0].split("|") if h.strip()]
-        data_lines = [l for l in lines[2:] if not l.replace("|", "").replace("-", "").strip() == ""]
+        data_lines = [l for l in lines[2:] if not set(l.replace("|", "").replace("-", "").strip()) <= {""}]
         if headers and data_lines:
             cols = [{"name": h, "type": "string"} for h in headers]
             rows = []
             for line in data_lines[:100]:
-                vals = [v.strip() for v in line.split("|") if v.strip() or True]
-                vals = [v for i, v in enumerate(vals) if i < len(headers) + 1]
-                # remove first/last empty from pipe split
+                vals = [v.strip() for v in line.split("|")]
                 if vals and vals[0] == "":
                     vals = vals[1:]
                 if vals and vals[-1] == "":
