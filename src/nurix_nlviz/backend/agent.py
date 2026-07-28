@@ -36,10 +36,13 @@ async def _get_token(config: AppConfig) -> str:
         from databricks.sdk import WorkspaceClient
         ws = WorkspaceClient()
         auth = ws.config.authenticate()
-        return auth.get("Authorization", "").replace("Bearer ", "")
+        token = auth.get("Authorization", "").replace("Bearer ", "")
+        if not token:
+            raise RuntimeError("WorkspaceClient returned empty Authorization header — check SP credentials")
+        return token
     except Exception as exc:
-        logger.warning(f"Could not refresh token: {exc}")
-        return ""
+        logger.error(f"Could not obtain Databricks token: {exc}")
+        raise RuntimeError(f"Authentication failed: {exc}") from exc
 
 
 class GenieVizAgent:
@@ -56,6 +59,24 @@ class GenieVizAgent:
         self.config = config
 
     async def stream(self, question: str, session_id: str) -> AsyncIterator[str]:
+        """Public entry point. Delegates to _stream_inner and catches ExceptionGroup/TaskGroup errors."""
+        error_msg: str | None = None
+        try:
+            async for event in self._stream_inner(question, session_id):
+                yield event
+        except BaseException as exc:
+            # ExceptionGroup (Python 3.11+) surfaces as BaseException with .exceptions;
+            # anyio TaskGroup errors also arrive this way when they escape async generators.
+            cause: BaseException = exc
+            if hasattr(exc, "exceptions") and exc.exceptions:  # type: ignore[union-attr]
+                cause = exc.exceptions[0]  # type: ignore[union-attr]
+            error_msg = str(cause)
+            logger.error(f"Agent outer error ({type(exc).__name__}): {cause}\n{traceback.format_exc()}")
+
+        if error_msg is not None:
+            yield _make_event({"type": "error", "message": error_msg})
+
+    async def _stream_inner(self, question: str, session_id: str) -> AsyncIterator[str]:
         """Create MCP client, build the graph, and stream SSE events."""
         try:
             from langchain_mcp_adapters.client import MultiServerMCPClient
