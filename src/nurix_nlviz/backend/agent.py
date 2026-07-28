@@ -113,7 +113,6 @@ class GenieVizAgent:
                 base_url=config.ai_gateway_base_url,
                 api_key=token,
                 model=config.claude_model,
-                temperature=0,
                 streaming=False,
             )
 
