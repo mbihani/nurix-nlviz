@@ -21,17 +21,18 @@ env:
   - name: MLFLOW_EXPERIMENT
     value: nurix-nlviz-traces
   # CONFIGURE(DB_TYPE) — "lakebase" or "sqlite" fallback
-  # Note: workspace is at Lakebase capacity — using sqlite fallback
-  # To switch to Lakebase: set DB_TYPE=lakebase and LAKEBASE_INSTANCE to your instance name
   - name: DB_TYPE
-    value: sqlite
-  # CONFIGURE(LAKEBASE_INSTANCE) — Lakebase instance name (used by SDK when DB_TYPE=lakebase)
+    value: lakebase
+  # CONFIGURE(LAKEBASE_INSTANCE) — Lakebase instance name
   - name: LAKEBASE_INSTANCE
     value: nurix-nlviz-db
   # CONFIGURE(LAKEBASE_DATABASE) — Lakebase database name
   - name: LAKEBASE_DATABASE
     value: databricks_postgres
 resources:
+  - name: nurix-nlviz-db
+    resource_type: database_instance
+    permission: CAN_CONNECT_AND_CREATE
   - name: enterpret-genie-space
     resource_type: genie_space
     id: 01f11dcb53181defb69ee49bd73bca10
