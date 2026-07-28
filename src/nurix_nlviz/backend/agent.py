@@ -42,35 +42,41 @@ async def _get_token(config: AppConfig) -> str:
         return ""
 
 
-async def run_chat_agent(
-    question: str,
-    session_id: str,
-    config: AppConfig,
-) -> AsyncIterator[str]:
+class GenieVizAgent:
     """
-    Streams SSE events for a chat question.
-    Yields string chunks in text/event-stream format.
+    Self-contained LangGraph agent for Genie-backed chart generation.
+
+    Usage:
+        agent = GenieVizAgent(config)
+        async for chunk in agent.stream(question, session_id):
+            ...
     """
-    try:
-        from langchain_mcp_adapters.client import MultiServerMCPClient
 
-        token = await _get_token(config)
+    def __init__(self, config: AppConfig) -> None:
+        self.config = config
 
-        yield _make_event({"type": "thinking", "text": "Connecting to Genie..."})
+    async def stream(self, question: str, session_id: str) -> AsyncIterator[str]:
+        """Create MCP client, build the graph, and stream SSE events."""
+        try:
+            from langchain_mcp_adapters.client import MultiServerMCPClient
 
-        # Build MCP client with Genie SSE transport
-        mcp_client = MultiServerMCPClient(
-            {
-                "genie": {
-                    "transport": "sse",
-                    "url": config.genie_mcp_url,
-                    "headers": {"Authorization": f"Bearer {token}"},
+            token = await _get_token(self.config)
+
+            yield _make_event({"type": "thinking", "text": "Connecting to Genie..."})
+
+            # Build MCP client — NOT a context manager in langchain-mcp-adapters 0.1.0+
+            mcp_client = MultiServerMCPClient(
+                {
+                    "genie": {
+                        "transport": "sse",
+                        "url": self.config.genie_mcp_url,
+                        "headers": {"Authorization": f"Bearer {token}"},
+                    }
                 }
-            }
-        )
+            )
+            genie_tools = await mcp_client.get_tools()
 
-        async with mcp_client as client:
-            genie_tools = client.get_tools()
+            config = self.config
 
             # pin_chart tool — inserts directly into DB
             @tool
@@ -220,9 +226,23 @@ async def run_chat_agent(
 
             yield _make_event({"type": "done"})
 
-    except Exception as exc:
-        logger.error(f"Agent error: {exc}\n{traceback.format_exc()}")
-        yield _make_event({"type": "error", "message": str(exc)})
+        except Exception as exc:
+            logger.error(f"Agent error: {exc}\n{traceback.format_exc()}")
+            yield _make_event({"type": "error", "message": str(exc)})
+
+
+async def run_chat_agent(
+    question: str,
+    session_id: str,
+    config: AppConfig,
+) -> AsyncIterator[str]:
+    """
+    Streams SSE events for a chat question.
+    Thin wrapper around GenieVizAgent for backwards compatibility.
+    """
+    agent = GenieVizAgent(config)
+    async for chunk in agent.stream(question, session_id):
+        yield chunk
 
 
 def _try_parse_genie_result(content: str) -> tuple[list[dict], list[list]] | None:
