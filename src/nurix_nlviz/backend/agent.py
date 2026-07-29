@@ -7,7 +7,6 @@ LangGraph-based agent that:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import traceback
 from typing import Any, AsyncIterator
@@ -16,7 +15,7 @@ import mlflow
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
-from .chart_router import pick_chart_type, pick_chart_type_with_llm
+from .chart_router import pick_chart_type, build_figure, pick_chart_type_with_llm
 from .config import AppConfig
 from .logger import logger
 
@@ -232,13 +231,11 @@ class GenieVizAgent:
 
             # Emit chart after collecting rows
             if collected_rows is not None and collected_columns is not None:
-                chart_type, chart_config = pick_chart_type(collected_columns)
-                chart_data = _rows_to_chart_data(collected_columns, collected_rows)
+                chart_type = pick_chart_type(collected_columns)
+                figure = build_figure(chart_type, collected_columns, collected_rows[:200])
                 yield _make_event({
                     "type": "chart",
-                    "chartType": chart_type,
-                    "config": chart_config,
-                    "data": chart_data[:200],
+                    "figure": figure,
                     "sql": collected_sql,
                     "columns": collected_columns,
                     "rows": collected_rows[:100],
@@ -372,13 +369,3 @@ def _try_parse_genie_result(content) -> tuple[list[dict], list[list]] | None:
     return None
 
 
-def _rows_to_chart_data(columns: list[dict], rows: list[list]) -> list[dict]:
-    """Convert column/rows format to [{col: val, ...}] for Recharts."""
-    result = []
-    col_names = [c["name"] for c in columns]
-    for row in rows:
-        if isinstance(row, dict):
-            result.append(row)
-        elif isinstance(row, list):
-            result.append({col_names[i]: row[i] for i in range(min(len(col_names), len(row)))})
-    return result

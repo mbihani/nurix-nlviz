@@ -142,6 +142,9 @@ function MessageBubble({
     );
   }
 
+  const columns = (msg.chart?.columns ?? msg.columns ?? []) as Array<{ name: string; type: string }>;
+  const rows = (msg.chart?.rows ?? msg.rows ?? []) as any[][];
+
   return (
     <div className="flex flex-col gap-2">
       {/* Thinking indicator */}
@@ -181,15 +184,12 @@ function MessageBubble({
       {msg.chart && (
         <div className="rounded-xl border bg-card p-3">
           <ChartRenderer
-            chartType={msg.chart.chartType}
-            config={msg.chart.config}
-            data={msg.chart.data}
+            figure={msg.chart.figure}
+            columns={columns}
+            rows={rows}
             height={260}
           />
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-xs text-muted-foreground capitalize">
-              {msg.chart.chartType} chart · {msg.chart.data.length} rows
-            </span>
+          <div className="mt-2 flex items-center justify-end">
             <button
               onClick={() => onPin(msg)}
               disabled={isPinned}

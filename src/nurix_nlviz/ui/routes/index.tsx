@@ -39,9 +39,9 @@ function App() {
             session_id: sessionId,
             question: msg.content || messages.find((m, i) => messages[i + 1]?.id === msg.id)?.content || 'Pinned chart',
             sql_query: msg.sql || msg.chart.sql || null,
-            chart_type: msg.chart.chartType,
-            chart_config: msg.chart.config,
-            rows_json: msg.chart.data,
+            chart_type: msg.chart.figure?.data?.[0]?.type ?? 'plotly',
+            chart_config: msg.chart.figure,
+            rows_json: (msg.chart.rows as any[]) ?? null,
           }),
         });
       } catch {

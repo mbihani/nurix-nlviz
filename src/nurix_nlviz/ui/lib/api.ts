@@ -34,6 +34,10 @@ export interface PinOut {
   sql_query?: string | null;
 }
 
+export interface PinUpdateRequest {
+  chart_config: Record<string, unknown>;
+}
+
 export interface ValidationError {
   ctx?: Record<string, unknown>;
   input?: unknown;
@@ -44,6 +48,10 @@ export interface ValidationError {
 
 export interface GetPinsParams {
   session_id: string;
+}
+
+export interface UpdatePinParams {
+  pin_id: number;
 }
 
 export interface DeletePinParams {
@@ -142,6 +150,21 @@ export const createPin = async (data: PinIn, options?: RequestInit): Promise<{ d
 
 export function useCreatePin(options?: { mutation?: UseMutationOptions<{ data: PinOut }, ApiError, PinIn> }) {
   return useMutation({ mutationFn: (data) => createPin(data), ...options?.mutation });
+}
+
+export const updatePin = async (params: UpdatePinParams, data: PinUpdateRequest, options?: RequestInit): Promise<{ data: PinOut }> => {
+  const res = await fetch(`/api/pins/${params.pin_id}`, { ...options, method: "PATCH", headers: { "Content-Type": "application/json", ...options?.headers }, body: JSON.stringify(data) });
+  if (!res.ok) {
+    const body = await res.text();
+    let parsed: unknown;
+    try { parsed = JSON.parse(body); } catch { parsed = body; }
+    throw new ApiError(res.status, res.statusText, parsed);
+  }
+  return { data: await res.json() };
+};
+
+export function useUpdatePin(options?: { mutation?: UseMutationOptions<{ data: PinOut }, ApiError, { params: UpdatePinParams; data: PinUpdateRequest }> }) {
+  return useMutation({ mutationFn: (vars) => updatePin(vars.params, vars.data), ...options?.mutation });
 }
 
 export const deletePin = async (params: DeletePinParams, options?: RequestInit): Promise<{ data: unknown }> => {

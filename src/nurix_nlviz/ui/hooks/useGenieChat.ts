@@ -1,11 +1,11 @@
 import { useState, useCallback, useRef } from 'react';
 
+export type PlotlyFigure = { data: any[]; layout: any };
+
 export type ChartEvent = {
   type: 'chart';
-  chartType: string;
-  config: Record<string, string>;
-  data: Record<string, unknown>[];
-  sql?: string;
+  figure: PlotlyFigure;
+  sql: string;
   columns?: { name: string; type: string }[];
   rows?: unknown[][];
 };
@@ -25,6 +25,8 @@ export type Message = {
   thinking?: string;
   sql?: string;
   chart?: ChartEvent;
+  columns?: { name: string; type: string }[];
+  rows?: unknown[][];
   isLoading?: boolean;
 };
 
@@ -142,7 +144,7 @@ function handleSSEEvent(
           return { ...m, sql: event.sql };
 
         case 'rows':
-          return m; // rows are included in the chart event
+          return { ...m, columns: event.columns, rows: event.rows };
 
         case 'chart':
           return {

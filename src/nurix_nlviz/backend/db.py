@@ -221,6 +221,56 @@ def list_pins(session_id: str) -> list[dict]:
             return rows
 
 
+def update_pin_config(pin_id: int, chart_config: dict) -> dict | None:
+    chart_config_str = json.dumps(chart_config)
+
+    if _config and _config.db_type == "sqlite":
+        con = sqlite3.connect(_sqlite_path)
+        con.row_factory = sqlite3.Row
+        cur = con.execute(
+            "UPDATE pinned_charts SET chart_config = ? WHERE id = ?",
+            (chart_config_str, pin_id),
+        )
+        if cur.rowcount == 0:
+            con.close()
+            return None
+        con.commit()
+        cur2 = con.execute("SELECT * FROM pinned_charts WHERE id = ?", (pin_id,))
+        row = cur2.fetchone()
+        con.close()
+        if not row:
+            return None
+        r = dict(row)
+        r["chart_config"] = json.loads(r["chart_config"]) if r["chart_config"] else {}
+        r["rows_json"] = json.loads(r["rows_json"]) if r["rows_json"] else None
+        return r
+    else:
+        import sqlalchemy
+
+        with _engine.begin() as conn:
+            result = conn.execute(
+                sqlalchemy.text("""
+                    UPDATE pinned_charts
+                    SET chart_config = :chart_config::jsonb
+                    WHERE id = :id
+                    RETURNING id, session_id, question, sql_query, chart_type,
+                              chart_config, rows_json, created_at
+                """),
+                {"chart_config": chart_config_str, "id": pin_id},
+            )
+            row = result.mappings().fetchone()
+            if not row:
+                return None
+            r = dict(row)
+            if isinstance(r.get("chart_config"), str):
+                r["chart_config"] = json.loads(r["chart_config"])
+            if isinstance(r.get("rows_json"), str):
+                r["rows_json"] = json.loads(r["rows_json"])
+            if r.get("created_at"):
+                r["created_at"] = str(r["created_at"])
+            return r
+
+
 def delete_pin(pin_id: int) -> bool:
     if _config and _config.db_type == "sqlite":
         con = sqlite3.connect(_sqlite_path)

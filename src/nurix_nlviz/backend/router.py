@@ -1,8 +1,9 @@
 import json
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from .._metadata import api_prefix
 from .agent import run_chat_agent
@@ -10,6 +11,10 @@ from .config import AppConfig
 from .logger import logger
 from .models import ChatRequest, HealthOut, PinIn, PinOut
 from . import db as db_module
+
+
+class PinUpdateRequest(BaseModel):
+    chart_config: dict[str, Any]
 
 api = APIRouter(prefix=api_prefix)
 
@@ -79,6 +84,20 @@ async def create_pin(body: PinIn):
         return PinOut(**pin)
     except Exception as exc:
         logger.error(f"Error creating pin: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@api.patch("/pins/{pin_id}", response_model=PinOut, operation_id="updatePin")
+async def update_pin(pin_id: int, body: PinUpdateRequest):
+    try:
+        updated = db_module.update_pin_config(pin_id, body.chart_config)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Pin not found")
+        return PinOut(**updated)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error updating pin: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
