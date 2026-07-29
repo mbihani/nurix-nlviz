@@ -47,8 +47,10 @@ function App() {
         messages.find((_m, i) => messages[i + 1]?.id === msg.id)?.content ||
         'Pinned chart';
 
+      const offset = pinnedMsgIds.size * 20;
+
       try {
-        await fetch('/api/pins', {
+        const res = await fetch('/api/pins', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -62,17 +64,26 @@ function App() {
               rows: msg.htmlReport.rows.slice(0, 50),
             },
             rows_json: msg.htmlReport.rows.slice(0, 50) as any[],
+            x: offset,
+            y: offset,
+            width: 600,
+            height: 400,
           }),
         });
+        if (!res.ok) {
+          console.error('Failed to pin chart:', await res.text());
+          return;
+        }
       } catch {
-        // silently fall back to local pin
+        console.error('Failed to pin chart: network error');
+        return;
       }
 
       setPinnedMsgIds((prev) => new Set([...prev, msg.id]));
       setPinRefresh((n) => n + 1);
       setNewPinCount((n) => n + 1);
     },
-    [sessionId, messages],
+    [sessionId, messages, pinnedMsgIds],
   );
 
   // Resize panel by dragging its left edge
