@@ -1,13 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Trash2, Pin, Expand, X } from 'lucide-react';
-import Plot from 'react-plotly.js';
-import { ChartEditor } from './ChartEditor';
-import { CHART_COLORS } from '../config/branding';
-
-interface PlotlyFigure {
-  data: any[];
-  layout: any;
-}
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Trash2, Pin, X } from 'lucide-react';
 
 interface PinnedChart {
   id: number;
@@ -15,9 +7,20 @@ interface PinnedChart {
   question: string;
   sql_query?: string;
   chart_type: string;
-  chart_config: PlotlyFigure;
+  chart_config: { html?: string; [key: string]: any };
   rows_json?: any[][];
   created_at?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface CardState {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 interface PinnedChartsProps {
@@ -25,22 +28,40 @@ interface PinnedChartsProps {
   refreshTrigger?: number;
 }
 
+const MIN_W = 300;
+const MIN_H = 200;
+const GRID = 20;
+
+function snap(v: number) {
+  return Math.round(v / GRID) * GRID;
+}
+
 export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
   const [pins, setPins] = useState<PinnedChart[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<PinnedChart | null>(null);
-  const [editing, setEditing] = useState<PinnedChart | null>(null);
+  // cardLayouts is the source of truth for positions while dragging/resizing
+  const [cardLayouts, setCardLayouts] = useState<Map<number, CardState>>(new Map());
 
   const loadPins = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(`/api/pins?session_id=${encodeURIComponent(sessionId)}`);
       if (res.ok) {
-        const data = await res.json();
+        const data: PinnedChart[] = await res.json();
         setPins(data);
+        setCardLayouts((prev) => {
+          const next = new Map(prev);
+          data.forEach((p) => {
+            if (!next.has(p.id)) {
+              next.set(p.id, { x: p.x ?? 0, y: p.y ?? 0, width: p.width ?? 600, height: p.height ?? 400 });
+            }
+          });
+          return next;
+        });
       }
     } catch {
-      // silently fail — pins are non-critical
+      // silently fail
     } finally {
       setLoading(false);
     }
@@ -50,32 +71,31 @@ export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
     loadPins();
   }, [loadPins, refreshTrigger]);
 
+  const persistLayout = useCallback(async (id: number, layout: CardState) => {
+    try {
+      await fetch(`/api/pins/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ x: layout.x, y: layout.y, width: layout.width, height: layout.height }),
+      });
+    } catch {
+      // non-critical
+    }
+  }, []);
+
   const handleDelete = async (id: number) => {
     try {
       await fetch(`/api/pins/${id}`, { method: 'DELETE' });
       setPins((prev) => prev.filter((p) => p.id !== id));
+      setCardLayouts((prev) => { const next = new Map(prev); next.delete(id); return next; });
       if (expanded?.id === id) setExpanded(null);
     } catch {
       // ignore
     }
   };
 
-  const handleSaveEdit = async (pin: PinnedChart, updatedFigure: PlotlyFigure) => {
-    try {
-      const res = await fetch(`/api/pins/${pin.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chart_config: updatedFigure }),
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setPins((prev) => prev.map((p) => (p.id === pin.id ? updated : p)));
-        if (expanded?.id === pin.id) setExpanded(updated);
-      }
-    } catch {
-      // ignore patch errors
-    }
-  };
+  const getLayout = (pin: PinnedChart): CardState =>
+    cardLayouts.get(pin.id) ?? { x: pin.x ?? 0, y: pin.y ?? 0, width: pin.width ?? 600, height: pin.height ?? 400 };
 
   if (loading && pins.length === 0) {
     return (
@@ -85,97 +105,44 @@ export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
 
   if (pins.length === 0) {
     return (
-      <div className="text-sm text-muted-foreground text-center py-6 px-4">
-        <Pin className="mx-auto mb-2 opacity-30" size={24} />
-        No pinned charts yet. Pin a chart from the visualization panel.
+      <div className="flex flex-col items-center justify-center h-full text-sm text-muted-foreground py-16 px-4">
+        <Pin className="mb-2 opacity-30" size={32} />
+        <p>No pinned charts yet.</p>
+        <p className="text-xs mt-1 opacity-70">Pin a chart from the chat to see it here.</p>
       </div>
     );
   }
 
-  const getFigure = (pin: PinnedChart): PlotlyFigure => {
-    const cfg = pin.chart_config;
-    if (cfg && Array.isArray(cfg.data)) return cfg;
-    return { data: [], layout: {} };
-  };
+  // Canvas height = max bottom edge of all cards + padding
+  const canvasMinH = Math.max(
+    600,
+    ...Array.from(cardLayouts.values()).map((l) => l.y + l.height + 80),
+  );
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-3 p-3">
-        {pins.map((pin) => {
-          const figure = getFigure(pin);
-          return (
-            <div
-              key={pin.id}
-              className="border rounded-lg bg-card p-3 hover:shadow-sm transition-shadow"
-            >
-              <div className="flex items-start justify-between mb-2 gap-2">
-                <p className="text-xs font-medium text-foreground line-clamp-2 flex-1">
-                  {pin.question}
-                </p>
-                <div className="flex gap-1 shrink-0">
-                  <button
-                    onClick={() => setExpanded(pin)}
-                    className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
-                    title="Expand"
-                  >
-                    <Expand size={13} />
-                  </button>
-                  <button
-                    onClick={() => setEditing(pin)}
-                    className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground text-xs"
-                    title="Edit chart"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    onClick={() => handleDelete(pin.id)}
-                    className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                    title="Delete"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              </div>
-
-              {figure.data.length > 0 ? (
-                <div className="pointer-events-none">
-                  <Plot
-                    data={figure.data}
-                    layout={{
-                      ...figure.layout,
-                      paper_bgcolor: 'transparent',
-                      plot_bgcolor: 'transparent',
-                      autosize: true,
-                      height: 140,
-                      margin: { t: 20, b: 30, l: 40, r: 10 },
-                    }}
-                    config={{ displayModeBar: false, responsive: true }}
-                    style={{ width: '100%' }}
-                    useResizeHandler
-                  />
-                </div>
-              ) : (
-                <div className="h-24 flex items-center justify-center text-xs text-muted-foreground bg-muted/30 rounded">
-                  {pin.chart_type.toUpperCase()} chart
-                </div>
-              )}
-
-              <div className="mt-1 flex items-center justify-between">
-                <span
-                  className="text-xs px-1.5 py-0.5 rounded text-white capitalize"
-                  style={{ backgroundColor: CHART_COLORS[1] }}
-                >
-                  {pin.chart_type}
-                </span>
-                {pin.created_at && (
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(pin.created_at).toLocaleDateString()}
-                  </span>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      <div
+        className="relative w-full overflow-auto"
+        style={{
+          minHeight: `max(80vh, ${canvasMinH}px)`,
+          backgroundImage:
+            'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'20\' height=\'20\'%3E%3Cpath d=\'M 20 0 L 0 0 0 20\' fill=\'none\' stroke=\'%23e5e7eb\' stroke-width=\'0.5\'/%3E%3C/svg%3E")',
+          backgroundSize: '20px 20px',
+        }}
+      >
+        {pins.map((pin) => (
+          <DraggableCard
+            key={pin.id}
+            pin={pin}
+            layout={getLayout(pin)}
+            onLayoutChange={(l) => {
+              setCardLayouts((prev) => new Map(prev).set(pin.id, l));
+            }}
+            onLayoutCommit={(l) => persistLayout(pin.id, l)}
+            onDelete={() => handleDelete(pin.id)}
+            onExpand={() => setExpanded(pin)}
+          />
+        ))}
       </div>
 
       {/* Expand modal */}
@@ -198,28 +165,18 @@ export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
               </button>
             </div>
 
-            {(() => {
-              const fig = getFigure(expanded);
-              return fig.data.length > 0 ? (
-                <Plot
-                  data={fig.data}
-                  layout={{
-                    ...fig.layout,
-                    paper_bgcolor: 'transparent',
-                    plot_bgcolor: 'transparent',
-                    autosize: true,
-                    height: 320,
-                  }}
-                  config={{ displayModeBar: true, responsive: true }}
-                  style={{ width: '100%' }}
-                  useResizeHandler
-                />
-              ) : (
-                <div className="h-48 flex items-center justify-center text-muted-foreground">
-                  No chart data
-                </div>
-              );
-            })()}
+            {expanded.chart_config?.html ? (
+              <iframe
+                srcDoc={expanded.chart_config.html}
+                sandbox="allow-scripts"
+                style={{ height: '380px', width: '100%', border: 'none', borderRadius: '8px' }}
+                title={expanded.question}
+              />
+            ) : (
+              <div className="h-48 flex items-center justify-center text-muted-foreground">
+                No chart data
+              </div>
+            )}
 
             {expanded.sql_query && (
               <details className="mt-4">
@@ -234,19 +191,152 @@ export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
           </div>
         </div>
       )}
-
-      {/* Edit modal */}
-      {editing && (
-        <ChartEditor
-          figure={getFigure(editing)}
-          columns={[]}
-          rows={[]}
-          onUpdate={(updatedFigure) => {
-            handleSaveEdit(editing, updatedFigure);
-          }}
-          onClose={() => setEditing(null)}
-        />
-      )}
     </>
+  );
+}
+
+interface DraggableCardProps {
+  pin: PinnedChart;
+  layout: CardState;
+  onLayoutChange: (l: CardState) => void;
+  onLayoutCommit: (l: CardState) => void;
+  onDelete: () => void;
+  onExpand: () => void;
+}
+
+function DraggableCard({
+  pin,
+  layout,
+  onLayoutChange,
+  onLayoutCommit,
+  onDelete,
+  onExpand,
+}: DraggableCardProps) {
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+
+  const startDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const origX = layoutRef.current.x;
+    const origY = layoutRef.current.y;
+
+    const onMove = (ev: MouseEvent) => {
+      const nx = snap(Math.max(0, origX + ev.clientX - startX));
+      const ny = snap(Math.max(0, origY + ev.clientY - startY));
+      onLayoutChange({ ...layoutRef.current, x: nx, y: ny });
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      onLayoutCommit(layoutRef.current);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const origW = layoutRef.current.width;
+    const origH = layoutRef.current.height;
+
+    const onMove = (ev: MouseEvent) => {
+      const nw = snap(Math.max(MIN_W, origW + ev.clientX - startX));
+      const nh = snap(Math.max(MIN_H, origH + ev.clientY - startY));
+      onLayoutChange({ ...layoutRef.current, width: nw, height: nh });
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      onLayoutCommit(layoutRef.current);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  const html = pin.chart_config?.html ?? null;
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: layout.x,
+        top: layout.y,
+        width: layout.width,
+        height: layout.height,
+        minWidth: MIN_W,
+        minHeight: MIN_H,
+      }}
+      className="border rounded-lg bg-card shadow-sm flex flex-col select-none"
+    >
+      {/* Drag handle header */}
+      <div
+        className="flex items-center justify-between px-3 py-2 border-b bg-muted/40 rounded-t-lg cursor-grab active:cursor-grabbing shrink-0"
+        onMouseDown={startDrag}
+      >
+        <p className="text-xs font-medium text-foreground line-clamp-1 flex-1 mr-2">
+          {pin.question}
+        </p>
+        <div className="flex gap-1 shrink-0" onMouseDown={(e) => e.stopPropagation()}>
+          <button
+            onClick={onExpand}
+            className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+            title="Expand"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+            </svg>
+          </button>
+          <button
+            onClick={onDelete}
+            className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+            title="Delete"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+
+      {/* Chart content */}
+      <div className="flex-1 overflow-hidden rounded-b-lg relative">
+        {html ? (
+          <iframe
+            srcDoc={html}
+            sandbox="allow-scripts"
+            style={{ width: '100%', height: '100%', border: 'none' }}
+            title={pin.question}
+          />
+        ) : (
+          <div className="h-full flex items-center justify-center text-xs text-muted-foreground bg-muted/30">
+            {pin.chart_type.toUpperCase()} chart
+          </div>
+        )}
+      </div>
+
+      {/* Resize handle (bottom-right corner) */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          right: 0,
+          width: 16,
+          height: 16,
+          cursor: 'se-resize',
+        }}
+        onMouseDown={startResize}
+        className="flex items-end justify-end pb-0.5 pr-0.5 text-muted-foreground/50 hover:text-muted-foreground"
+        title="Resize"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+          <rect x="6" y="6" width="2" height="2" />
+          <rect x="3" y="6" width="2" height="2" />
+          <rect x="6" y="3" width="2" height="2" />
+        </svg>
+      </div>
+    </div>
   );
 }

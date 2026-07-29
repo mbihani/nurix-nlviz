@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from .._metadata import api_prefix
 from .agent import run_chat_agent
+from .chart_router import generate_html_report
 from .config import AppConfig
 from .logger import logger
 from .models import ChatRequest, HealthOut, PinIn, PinOut
@@ -14,7 +15,18 @@ from . import db as db_module
 
 
 class PinUpdateRequest(BaseModel):
-    chart_config: dict[str, Any]
+    chart_config: dict[str, Any] | None = None
+    x: int | None = None
+    y: int | None = None
+    width: int | None = None
+    height: int | None = None
+
+
+class RefineRequest(BaseModel):
+    original_question: str
+    refinement: str
+    columns: list[str]
+    rows: list[list]
 
 api = APIRouter(prefix=api_prefix)
 
@@ -56,6 +68,33 @@ async def chat(
     )
 
 
+@api.post("/refine", operation_id="refineChart")
+async def refine_chart(req: RefineRequest, config: ConfigDep):
+    """Re-ask Claude to regenerate HTML with a refinement instruction."""
+    try:
+        from openai import AsyncOpenAI
+        from databricks.sdk import WorkspaceClient
+
+        ws = WorkspaceClient()
+        auth = ws.config.authenticate()
+        token = auth.get("Authorization", "").replace("Bearer ", "")
+
+        client = AsyncOpenAI(
+            base_url=config.ai_gateway_base_url,
+            api_key=token,
+        )
+        html = await generate_html_report(
+            question=f"{req.original_question} — {req.refinement}",
+            columns=[{"name": c} for c in req.columns],
+            rows=req.rows,
+            client=client,
+        )
+        return {"html": html}
+    except Exception as exc:
+        logger.error(f"Error refining chart: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @api.get("/pins", response_model=list[PinOut], operation_id="getPins")
 async def get_pins(session_id: str):
     try:
@@ -76,6 +115,10 @@ async def create_pin(body: PinIn):
             chart_type=body.chart_type,
             chart_config=body.chart_config,
             rows_json=body.rows_json,
+            x=body.x,
+            y=body.y,
+            width=body.width,
+            height=body.height,
         )
         rows = db_module.list_pins(body.session_id)
         pin = next((r for r in rows if r["id"] == pin_id), None)
@@ -90,7 +133,14 @@ async def create_pin(body: PinIn):
 @api.patch("/pins/{pin_id}", response_model=PinOut, operation_id="updatePin")
 async def update_pin(pin_id: int, body: PinUpdateRequest):
     try:
-        updated = db_module.update_pin_config(pin_id, body.chart_config)
+        updated = db_module.update_pin_layout(
+            pin_id,
+            x=body.x,
+            y=body.y,
+            width=body.width,
+            height=body.height,
+            chart_config=body.chart_config,
+        )
         if not updated:
             raise HTTPException(status_code=404, detail="Pin not found")
         return PinOut(**updated)
