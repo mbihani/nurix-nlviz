@@ -290,8 +290,9 @@ function MessageBubble({
             <p className="mt-1 text-xs text-destructive">{refineError}</p>
           )}
 
-          <div className="mt-2 flex items-center justify-end gap-2">
+          <div className="mt-2 flex items-center justify-end gap-2 relative" style={{ zIndex: 20, pointerEvents: 'auto' }}>
             <button
+              type="button"
               onClick={() => { setRefineOpen((v) => !v); setRefineError(''); }}
               className="text-xs px-3 py-1.5 rounded-full border font-medium flex items-center gap-1 transition-colors bg-muted/40 hover:bg-muted text-muted-foreground border-border"
               title="Refine this chart"
@@ -299,6 +300,7 @@ function MessageBubble({
               ✏️ Refine
             </button>
             <button
+              type="button"
               onClick={() => onPin(pinnedFigureRef as Message)}
               className={`text-xs px-3 py-1.5 rounded-full border font-medium flex items-center gap-1 transition-colors ${
                 isPinned

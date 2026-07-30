@@ -18,7 +18,7 @@ export function ChartRenderer({ figure, height = 320, showToolbar = false }: Cha
   }
 
   return (
-    <div style={{ width: '100%' }}>
+    <div style={{ width: '100%', pointerEvents: showToolbar ? 'auto' : 'none' }}>
       <Plot
         data={figure.data}
         layout={{

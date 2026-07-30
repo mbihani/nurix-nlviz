@@ -278,7 +278,6 @@ processed_at (timestamp)
                 {"role": "user", "content": user_msg},
             ],
             max_tokens=64,
-            temperature=0,
         )
 
         raw = response.choices[0].message.content or "{}"
@@ -330,7 +329,6 @@ async def refine_chart(figure: dict, columns: list, refine_instruction: str, con
                 {"role": "user", "content": user_msg},
             ],
             max_tokens=4096,
-            temperature=0,
         )
 
         raw = response.choices[0].message.content or ""
