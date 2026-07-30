@@ -143,6 +143,13 @@ function MessageBubble({
   const [currentHtml, setCurrentHtml] = useState(msg.chart?.html);
   const refineInputRef = useRef<HTMLInputElement>(null);
 
+  // Sync currentHtml when the chart SSE event arrives after mount
+  useEffect(() => {
+    if (msg.chart?.html && !currentHtml) {
+      setCurrentHtml(msg.chart.html);
+    }
+  }, [msg.chart?.html, currentHtml]);
+
   useEffect(() => {
     if (refineOpen) refineInputRef.current?.focus();
   }, [refineOpen]);
