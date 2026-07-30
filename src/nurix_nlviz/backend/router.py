@@ -10,7 +10,7 @@ from .agent import run_chat_agent, _get_token
 from .chart_router import generate_chart_html, refine_chart_html
 from .config import AppConfig
 from .logger import logger
-from .models import ChatRequest, FilterRequest, HealthOut, PinIn, PinOut, RefineRequest
+from .models import ChatRequest, FilterEntry, FilterRequest, HealthOut, PinIn, PinOut, RefineRequest
 from . import db as db_module
 
 
@@ -169,19 +169,23 @@ async def apply_filter(body: FilterRequest, config: ConfigDep):
 
             sql = pin["sql_query"].strip().rstrip(";")
 
-            # Sanitize filter_col and filter_val to prevent injection
-            safe_col = re.sub(r"[^a-zA-Z0-9_]", "", body.filter_col)
-            safe_val = body.filter_val.replace("'", "''")
+            # Merge old single-filter + new multi-filter into one list
+            all_filters = list(body.filters)
+            if body.filter_col and body.filter_val not in ('', 'All', 'all'):
+                all_filters.append(FilterEntry(col=body.filter_col, val=body.filter_val))
 
-            if not safe_col:
-                continue
+            # Build combined WHERE clause using subquery wrapper
+            where_parts = []
+            for f in all_filters:
+                safe_col = re.sub(r'[^a-zA-Z0-9_]', '', f.col)
+                safe_val = f.val.replace("'", "''")
+                if safe_col and f.val not in ('', 'All', 'all'):
+                    where_parts.append(f"{safe_col} = '{safe_val}'")
 
-            if body.filter_val in ("", "All", "all"):
-                filtered_sql = sql
-            elif re.search(r"\bWHERE\b", sql, re.IGNORECASE):
-                filtered_sql = f"{sql} AND {safe_col} = '{safe_val}'"
+            if where_parts:
+                filtered_sql = f"SELECT * FROM ({sql}) AS _filtered WHERE {' AND '.join(where_parts)}"
             else:
-                filtered_sql = f"{sql} WHERE {safe_col} = '{safe_val}'"
+                filtered_sql = sql
 
             # Execute via Databricks Statement Execution API
             try:

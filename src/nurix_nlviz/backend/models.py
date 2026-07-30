@@ -48,8 +48,14 @@ class RefineRequest(BaseModel):
     columns: list[dict] | None = None
 
 
+class FilterEntry(BaseModel):
+    col: str
+    val: str
+
+
 class FilterRequest(BaseModel):
     session_id: str
-    filter_col: str
-    filter_val: str
+    filter_col: str = ''   # keep for backward compat
+    filter_val: str = ''   # keep for backward compat
     pin_ids: list[int]
+    filters: list[FilterEntry] = []  # new: multiple filters

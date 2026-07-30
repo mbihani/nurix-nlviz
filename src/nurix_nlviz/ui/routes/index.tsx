@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Pin, MessageCircle, X, Moon, Sun, Filter, XCircle } from 'lucide-react';
 import { APP_TITLE, APP_SUBTITLE, PRIMARY_COLOR, LOGO_URL } from '../config/branding';
 import { useGenieChat, type Message, type ChartEvent } from '../hooks/useGenieChat';
@@ -58,6 +58,19 @@ function App() {
 
   // Badge: count new pins since drawer was last opened
   const [newPinCount, setNewPinCount] = useState(0);
+
+  // Fix 1: Load persisted pins on mount to bootstrap pinCount and pinnedDbIds
+  useEffect(() => {
+    fetch(`/api/pins?session_id=${encodeURIComponent(sessionId)}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((pins: { id: number }[]) => {
+        if (pins.length > 0) {
+          setPinCount(pins.length);
+          setPinnedDbIds(pins.map((p) => p.id));
+        }
+      })
+      .catch(() => {});
+  }, [sessionId]);
 
   const toggleDark = () => {
     setDark((v) => {
@@ -136,28 +149,36 @@ function App() {
   );
 
   const applyFilter = useCallback(async (filters: Record<FilterKey, string>, pinIds: number[]) => {
-    const activeEntries = Object.entries(filters).filter(([, v]) => v !== 'All') as [FilterKey, string][];
-    if (activeEntries.length === 0 || pinIds.length === 0) {
+    const activeEntries = Object.entries(filters)
+      .filter(([, v]) => v !== 'All')
+      .map(([col, val]) => ({ col, val }));
+
+    if (pinIds.length === 0) {
       setFilterOverrides(new Map());
       return;
     }
+    if (activeEntries.length === 0) {
+      setFilterOverrides(new Map());
+      return;
+    }
+
     setIsFiltering(true);
     try {
-      // Apply filters one at a time for each active dimension
-      let currentIds = pinIds;
-      const newOverrides = new Map<number, string>();
-      for (const [col, val] of activeEntries) {
-        const res = await fetch('/api/filter', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionId, filter_col: col, filter_val: val, pin_ids: currentIds }),
-        });
-        if (res.ok) {
-          const data: { pin_id: number; chart_html: string }[] = await res.json();
-          data.forEach((d) => newOverrides.set(d.pin_id, d.chart_html));
-        }
+      const res = await fetch('/api/filter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          pin_ids: pinIds,
+          filters: activeEntries,
+        }),
+      });
+      if (res.ok) {
+        const data: { pin_id: number; chart_html: string }[] = await res.json();
+        const newOverrides = new Map<number, string>();
+        data.forEach((d) => newOverrides.set(d.pin_id, d.chart_html));
+        setFilterOverrides(newOverrides);
       }
-      setFilterOverrides(newOverrides);
     } catch {
       // silently fail
     } finally {
