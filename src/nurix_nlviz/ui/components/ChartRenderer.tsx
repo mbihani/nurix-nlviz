@@ -30,7 +30,7 @@ export function ChartRenderer({ figure, height = 320, showToolbar = false }: Cha
           font: { family: 'Inter, system-ui, sans-serif', size: 12 },
           margin: { t: 32, b: 40, l: 48, r: 16 },
         }}
-        config={{ displayModeBar: showToolbar, responsive: true }}
+        config={{ displayModeBar: showToolbar, staticPlot: !showToolbar, responsive: true }}
         style={{ width: '100%' }}
         useResizeHandler
       />
