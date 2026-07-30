@@ -8,7 +8,7 @@ interface PinnedChart {
   question: string;
   sql_query?: string;
   chart_type: string;
-  chart_config: { data?: any[]; layout?: any; [key: string]: any };
+  chart_config: string;
   rows_json?: any[][];
   created_at?: string;
   x: number;
@@ -167,8 +167,8 @@ export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
               </button>
             </div>
 
-            {expanded.chart_config?.data && expanded.chart_config.data.length > 0 ? (
-              <ChartRenderer figure={expanded.chart_config as any} height={420} showToolbar={true} />
+            {expanded.chart_config ? (
+              <ChartRenderer html={expanded.chart_config as string} height={420} />
             ) : (
               <div className="h-48 flex items-center justify-center text-muted-foreground">
                 No chart data
@@ -275,9 +275,6 @@ function DraggableCard({
     document.addEventListener('mouseup', onUp);
   };
 
-  const figure = pin.chart_config as any;
-  const hasChart = figure?.data && Array.isArray(figure.data) && figure.data.length > 0;
-
   // Allocate chart height = tile height minus header (≈36px)
   const chartHeight = Math.max(MIN_H - 36, layout.height - 48);
 
@@ -325,8 +322,8 @@ function DraggableCard({
 
       {/* Chart content — fills remaining space */}
       <div className="flex-1 overflow-hidden rounded-b-lg">
-        {hasChart ? (
-          <ChartRenderer figure={figure} height={chartHeight} showToolbar={false} />
+        {pin.chart_config ? (
+          <ChartRenderer html={pin.chart_config as string} height={chartHeight} />
         ) : (
           <div className="h-full flex items-center justify-center text-xs text-muted-foreground bg-muted/30">
             {pin.chart_type.toUpperCase()} chart

@@ -1,39 +1,22 @@
-import Plot from 'react-plotly.js';
-
 interface ChartRendererProps {
-  figure: { data: any[]; layout: any };
-  columns?: Array<{ name: string; type?: string }>;
-  rows?: any[][];
+  html: string;
   height?: number;
-  showToolbar?: boolean;
 }
 
-export function ChartRenderer({ figure, height = 320, showToolbar = false }: ChartRendererProps) {
-  if (!figure || !figure.data || figure.data.length === 0) {
+export function ChartRenderer({ html, height = 320 }: ChartRendererProps) {
+  if (!html) {
     return (
       <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
         No data to display
       </div>
     );
   }
-
   return (
-    <div style={{ width: '100%', pointerEvents: showToolbar ? 'auto' : 'none' }}>
-      <Plot
-        data={figure.data}
-        layout={{
-          ...figure.layout,
-          paper_bgcolor: 'transparent',
-          plot_bgcolor: 'transparent',
-          autosize: true,
-          height,
-          font: { family: 'Inter, system-ui, sans-serif', size: 12 },
-          margin: { t: 32, b: 40, l: 48, r: 16 },
-        }}
-        config={{ displayModeBar: showToolbar, staticPlot: !showToolbar, responsive: true }}
-        style={{ width: '100%' }}
-        useResizeHandler
-      />
-    </div>
+    <iframe
+      srcDoc={html}
+      sandbox="allow-scripts"
+      style={{ width: '100%', height, border: 'none', display: 'block' }}
+      title="Chart"
+    />
   );
 }

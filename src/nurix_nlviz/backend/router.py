@@ -1,5 +1,5 @@
 import json
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from .._metadata import api_prefix
 from .agent import run_chat_agent, _get_token
-from .chart_router import refine_chart
+from .chart_router import refine_chart_html
 from .config import AppConfig
 from .logger import logger
 from .models import ChatRequest, HealthOut, PinIn, PinOut, RefineRequest
@@ -15,7 +15,7 @@ from . import db as db_module
 
 
 class PinUpdateRequest(BaseModel):
-    chart_config: dict[str, Any] | None = None
+    chart_config: str | None = None
     x: int | None = None
     y: int | None = None
     width: int | None = None
@@ -66,14 +66,14 @@ async def refine_chart_endpoint(body: RefineRequest, config: ConfigDep):
     """Apply a natural-language refinement instruction to an existing chart."""
     try:
         token = await _get_token(config)
-        updated_figure = await refine_chart(
-            figure=body.chart_config,
-            columns=body.columns or [],
+        chart_html = await refine_chart_html(
+            current_html=body.chart_html,
             refine_instruction=body.refine_instruction,
+            columns=body.columns or [],
             config=config,
             token=token,
         )
-        return {"chart_config": updated_figure}
+        return {"chart_html": chart_html}
     except Exception as exc:
         logger.error(f"Error refining chart: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))

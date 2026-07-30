@@ -118,7 +118,7 @@ def _create_table_with_retry(engine) -> None:
             question TEXT NOT NULL,
             sql_query TEXT,
             chart_type TEXT NOT NULL,
-            chart_config JSONB NOT NULL,
+            chart_config TEXT NOT NULL,
             rows_json JSONB,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             x INTEGER DEFAULT 0,
@@ -165,14 +165,18 @@ def insert_pin(
     question: str,
     sql_query: str | None,
     chart_type: str,
-    chart_config: dict,
+    chart_config,
     rows_json: list | None,
     x: int = 0,
     y: int = 0,
     width: int = 600,
     height: int = 400,
 ) -> int:
-    chart_config_str = json.dumps(chart_config)
+    # chart_config is now an HTML string; accept str or dict (legacy)
+    if isinstance(chart_config, dict):
+        chart_config_str = json.dumps(chart_config)
+    else:
+        chart_config_str = str(chart_config) if chart_config is not None else ""
     rows_str = json.dumps(rows_json) if rows_json is not None else None
 
     if _config and _config.db_type == "sqlite":
@@ -196,7 +200,7 @@ def insert_pin(
                     INSERT INTO pinned_charts
                     (session_id, question, sql_query, chart_type, chart_config, rows_json, x, y, width, height)
                     VALUES (:session_id, :question, :sql_query, :chart_type,
-                            :chart_config::jsonb, :rows_json::jsonb, :x, :y, :width, :height)
+                            :chart_config, :rows_json::jsonb, :x, :y, :width, :height)
                     RETURNING id
                 """),
                 {
@@ -216,7 +220,13 @@ def insert_pin(
 
 
 def _normalize_pin_row(r: dict) -> dict:
-    r["chart_config"] = json.loads(r["chart_config"]) if isinstance(r.get("chart_config"), str) else (r.get("chart_config") or {})
+    # chart_config is an HTML string; return as-is
+    cc = r.get("chart_config")
+    if isinstance(cc, str):
+        # Keep as string; legacy JSON blobs become their string representation
+        r["chart_config"] = cc
+    else:
+        r["chart_config"] = cc or ""
     r["rows_json"] = json.loads(r["rows_json"]) if isinstance(r.get("rows_json"), str) else r.get("rows_json")
     if r.get("created_at"):
         r["created_at"] = str(r["created_at"])
@@ -289,8 +299,11 @@ def update_pin_layout(pin_id: int, x: int, y: int, width: int, height: int) -> d
             return _normalize_pin_row(dict(row)) if row else None
 
 
-def update_pin_config(pin_id: int, chart_config: dict) -> dict | None:
-    chart_config_str = json.dumps(chart_config)
+def update_pin_config(pin_id: int, chart_config) -> dict | None:
+    if isinstance(chart_config, dict):
+        chart_config_str = json.dumps(chart_config)
+    else:
+        chart_config_str = str(chart_config) if chart_config is not None else ""
 
     if _config and _config.db_type == "sqlite":
         con = sqlite3.connect(_sqlite_path)
@@ -314,7 +327,7 @@ def update_pin_config(pin_id: int, chart_config: dict) -> dict | None:
             result = conn.execute(
                 sqlalchemy.text("""
                     UPDATE pinned_charts
-                    SET chart_config = :chart_config::jsonb
+                    SET chart_config = :chart_config
                     WHERE id = :id
                     RETURNING id, session_id, question, sql_query, chart_type,
                               chart_config, rows_json, created_at, x, y, width, height

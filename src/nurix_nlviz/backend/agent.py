@@ -15,7 +15,7 @@ import mlflow
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
-from .chart_router import pick_chart_type, build_figure, pick_chart_type_with_llm
+from .chart_router import generate_chart_html
 from .config import AppConfig
 from .logger import logger
 
@@ -231,14 +231,18 @@ class GenieVizAgent:
 
             # Emit chart after collecting rows
             if collected_rows is not None and collected_columns is not None:
-                chart_type = pick_chart_type(collected_columns)
-                figure = build_figure(chart_type, collected_columns, collected_rows[:200])
+                chart_html = await generate_chart_html(
+                    collected_columns,
+                    collected_rows[:200],
+                    question,
+                    config=config,
+                    token=token,
+                )
                 yield _make_event({
                     "type": "chart",
-                    "figure": figure,
+                    "html": chart_html,
                     "sql": collected_sql,
                     "columns": collected_columns,
-                    "rows": collected_rows[:100],
                 })
             elif collected_sql:
                 yield _make_event({"type": "thinking", "text": "Processing results..."})

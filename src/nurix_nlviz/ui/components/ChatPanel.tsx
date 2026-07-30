@@ -140,7 +140,7 @@ function MessageBubble({
   const [refineInput, setRefineInput] = useState('');
   const [isRefining, setIsRefining] = useState(false);
   const [refineError, setRefineError] = useState('');
-  const [currentFigure, setCurrentFigure] = useState(msg.chart?.figure);
+  const [currentHtml, setCurrentHtml] = useState(msg.chart?.html);
   const refineInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -149,7 +149,7 @@ function MessageBubble({
 
   const handleRefine = async () => {
     const instruction = refineInput.trim();
-    if (!instruction || isRefining || !currentFigure) return;
+    if (!instruction || isRefining || !currentHtml) return;
     setIsRefining(true);
     setRefineError('');
     try {
@@ -158,16 +158,14 @@ function MessageBubble({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: sessionId,
-          original_question: msg.content,
-          sql_query: msg.sql,
-          chart_config: currentFigure,
+          chart_html: currentHtml,
           refine_instruction: instruction,
           columns: msg.chart?.columns ?? [],
         }),
       });
       const data = await res.json();
-      if (data.chart_config && typeof data.chart_config === 'object' && data.chart_config.data) {
-        setCurrentFigure(data.chart_config);
+      if (data.chart_html && typeof data.chart_html === 'string') {
+        setCurrentHtml(data.chart_html);
         setRefineInput('');
         setRefineOpen(false);
       } else {
@@ -202,10 +200,10 @@ function MessageBubble({
     );
   }
 
-  const columns = (msg.chart?.columns ?? msg.columns ?? []) as Array<{ name: string; type: string }>;
-  const rows = (msg.chart?.rows ?? msg.rows ?? []) as any[][];
-
-  const pinnedFigureRef = { ...msg, chart: msg.chart ? { ...msg.chart, figure: currentFigure ?? msg.chart.figure } : msg.chart };
+  const pinnedMsgRef = {
+    ...msg,
+    chart: msg.chart ? { ...msg.chart, html: currentHtml ?? msg.chart.html } : msg.chart,
+  };
 
   return (
     <div className="flex flex-col gap-2">
@@ -254,11 +252,8 @@ function MessageBubble({
             </div>
           ) : (
             <ChartRenderer
-              figure={currentFigure ?? msg.chart.figure}
-              columns={columns}
-              rows={rows}
+              html={currentHtml ?? msg.chart.html}
               height={260}
-              showToolbar={false}
             />
           )}
 
@@ -301,7 +296,7 @@ function MessageBubble({
             </button>
             <button
               type="button"
-              onClick={() => onPin(pinnedFigureRef as Message)}
+              onClick={() => onPin(pinnedMsgRef as Message)}
               className={`text-xs px-3 py-1.5 rounded-full border font-medium flex items-center gap-1 transition-colors ${
                 isPinned
                   ? 'bg-green-50 text-green-700 border-green-200'

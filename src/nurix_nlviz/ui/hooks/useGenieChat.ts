@@ -1,13 +1,10 @@
 import { useState, useCallback, useRef } from 'react';
 
-export type PlotlyFigure = { data: any[]; layout: any };
-
 export type ChartEvent = {
   type: 'chart';
-  figure: PlotlyFigure;
+  html: string;
   sql: string;
   columns?: { name: string; type: string }[];
-  rows?: unknown[][];
 };
 
 export type SSEEvent =

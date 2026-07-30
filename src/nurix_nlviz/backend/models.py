@@ -9,7 +9,7 @@ class PinIn(BaseModel):
     question: str
     sql_query: str | None = None
     chart_type: str
-    chart_config: dict[str, Any]
+    chart_config: str
     rows_json: list | None = None
     x: int = 0
     y: int = 0
@@ -28,7 +28,7 @@ class PinOut(BaseModel):
     question: str
     sql_query: str | None = None
     chart_type: str
-    chart_config: dict[str, Any]
+    chart_config: str
     rows_json: list | None = None
     created_at: str | None = None
     x: int = 0
@@ -43,8 +43,6 @@ class HealthOut(BaseModel):
 
 class RefineRequest(BaseModel):
     session_id: str
-    original_question: str | None = None
-    sql_query: str | None = None
-    chart_config: dict[str, Any]
+    chart_html: str
     refine_instruction: str
     columns: list[dict] | None = None
