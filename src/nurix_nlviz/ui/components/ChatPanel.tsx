@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Square, Loader2, Database, ChevronDown, ChevronUp } from 'lucide-react';
+import { Send, Square, Database, ChevronDown, ChevronUp } from 'lucide-react';
 import type { Message } from '../hooks/useGenieChat';
 import { ChartRenderer } from './ChartRenderer';
 
@@ -58,11 +58,11 @@ export function ChatPanel({
             <p className="text-sm text-muted-foreground mb-4">
               Ask a question about your customer feedback data.
             </p>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-2 justify-center">
               {SUGGESTED.map((s) => (
                 <button
                   key={s}
-                  className="text-xs text-left px-3 py-2 rounded-lg border border-dashed hover:bg-accent hover:border-primary transition-colors"
+                  className="text-xs px-3 py-2 rounded-full border hover:bg-accent hover:border-primary transition-colors"
                   onClick={() => onSend(s)}
                 >
                   {s}
@@ -135,7 +135,7 @@ function MessageBubble({
   if (msg.role === 'user') {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2 text-sm">
+        <div className="max-w-[85%] bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2 text-sm shadow-sm">
           {msg.content}
         </div>
       </div>
@@ -148,16 +148,14 @@ function MessageBubble({
   return (
     <div className="flex flex-col gap-2">
       {/* Thinking indicator */}
-      {msg.isLoading && msg.thinking && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 size={12} className="animate-spin" />
-          <span>{msg.thinking}</span>
-        </div>
-      )}
-      {msg.isLoading && !msg.thinking && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 size={12} className="animate-spin" />
-          <span>Thinking…</span>
+      {msg.isLoading && (
+        <div className="flex items-center gap-2">
+          <div className="bg-muted rounded-full px-3 py-2 flex items-center gap-1.5 text-muted-foreground text-xs">
+            <span className="typing-dot" />
+            <span className="typing-dot" />
+            <span className="typing-dot" />
+            {msg.thinking && <span className="ml-1">{msg.thinking}</span>}
+          </div>
         </div>
       )}
 
@@ -169,7 +167,7 @@ function MessageBubble({
             onClick={() => setSqlOpen(!sqlOpen)}
           >
             <Database size={11} />
-            <span>SQL</span>
+            <span className="bg-muted/60 rounded-md px-2 py-1 font-mono text-[11px]">SQL</span>
             {sqlOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
           </button>
           {sqlOpen && (
@@ -182,18 +180,22 @@ function MessageBubble({
 
       {/* Chart */}
       {msg.chart && (
-        <div className="rounded-xl border bg-card p-3">
+        <div>
           <ChartRenderer
             figure={msg.chart.figure}
             columns={columns}
             rows={rows}
             height={260}
+            showToolbar={false}
           />
           <div className="mt-2 flex items-center justify-end">
             <button
               onClick={() => onPin(msg)}
-              disabled={isPinned}
-              className="text-xs px-2 py-1 rounded border hover:bg-accent disabled:opacity-40 flex items-center gap-1"
+              className={`text-xs px-3 py-1.5 rounded-full border font-medium flex items-center gap-1 transition-colors ${
+                isPinned
+                  ? 'bg-green-50 text-green-700 border-green-200'
+                  : 'bg-primary/10 hover:bg-primary/20 text-primary border-primary/20'
+              }`}
               title="Pin this chart"
             >
               📌 {isPinned ? 'Pinned' : 'Pin this chart'}

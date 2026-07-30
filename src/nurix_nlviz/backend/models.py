@@ -11,6 +11,10 @@ class PinIn(BaseModel):
     chart_type: str
     chart_config: dict[str, Any]
     rows_json: list | None = None
+    x: int = 0
+    y: int = 0
+    width: int = 600
+    height: int = 400
 
 
 class ChatRequest(BaseModel):
@@ -27,6 +31,10 @@ class PinOut(BaseModel):
     chart_config: dict[str, Any]
     rows_json: list | None = None
     created_at: str | None = None
+    x: int = 0
+    y: int = 0
+    width: int = 600
+    height: int = 400
 
 
 class HealthOut(BaseModel):

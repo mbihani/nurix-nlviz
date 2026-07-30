@@ -17,25 +17,37 @@ export interface HealthOut {
 export interface PinIn {
   chart_config: Record<string, unknown>;
   chart_type: string;
+  height?: number;
   question: string;
   rows_json?: unknown[] | null;
   session_id: string;
   sql_query?: string | null;
+  width?: number;
+  x?: number;
+  y?: number;
 }
 
 export interface PinOut {
   chart_config: Record<string, unknown>;
   chart_type: string;
   created_at?: string | null;
+  height?: number;
   id: number;
   question: string;
   rows_json?: unknown[] | null;
   session_id: string;
   sql_query?: string | null;
+  width?: number;
+  x?: number;
+  y?: number;
 }
 
 export interface PinUpdateRequest {
-  chart_config: Record<string, unknown>;
+  chart_config?: Record<string, unknown> | null;
+  height?: number | null;
+  width?: number | null;
+  x?: number | null;
+  y?: number | null;
 }
 
 export interface ValidationError {

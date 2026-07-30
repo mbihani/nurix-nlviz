@@ -39,9 +39,20 @@ def _init_sqlite() -> None:
             chart_type TEXT NOT NULL,
             chart_config TEXT NOT NULL,
             rows_json TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (datetime('now')),
+            x INTEGER DEFAULT 0,
+            y INTEGER DEFAULT 0,
+            width INTEGER DEFAULT 600,
+            height INTEGER DEFAULT 400
         )
     """)
+    # idempotent: add columns if missing from older databases
+    for col, typedef in [("x", "INTEGER DEFAULT 0"), ("y", "INTEGER DEFAULT 0"),
+                         ("width", "INTEGER DEFAULT 600"), ("height", "INTEGER DEFAULT 400")]:
+        try:
+            con.execute(f"ALTER TABLE pinned_charts ADD COLUMN {col} {typedef}")
+        except Exception:
+            pass  # column already exists
     con.commit()
     con.close()
     logger.info("SQLite table initialized")
@@ -109,14 +120,30 @@ def _create_table_with_retry(engine) -> None:
             chart_type TEXT NOT NULL,
             chart_config JSONB NOT NULL,
             rows_json JSONB,
-            created_at TIMESTAMPTZ DEFAULT NOW()
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            x INTEGER DEFAULT 0,
+            y INTEGER DEFAULT 0,
+            width INTEGER DEFAULT 600,
+            height INTEGER DEFAULT 400
         )
     """)
+
+    alter_stmts = [
+        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS x INTEGER DEFAULT 0",
+        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS y INTEGER DEFAULT 0",
+        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS width INTEGER DEFAULT 600",
+        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS height INTEGER DEFAULT 400",
+    ]
 
     for attempt in range(3):
         try:
             with engine.begin() as conn:
                 conn.execute(ddl)
+                for stmt in alter_stmts:
+                    try:
+                        conn.execute(sqlalchemy.text(stmt))
+                    except Exception:
+                        pass  # column already exists
             logger.info("pinned_charts table ready")
             return
         except Exception as exc:
@@ -140,6 +167,10 @@ def insert_pin(
     chart_type: str,
     chart_config: dict,
     rows_json: list | None,
+    x: int = 0,
+    y: int = 0,
+    width: int = 600,
+    height: int = 400,
 ) -> int:
     chart_config_str = json.dumps(chart_config)
     rows_str = json.dumps(rows_json) if rows_json is not None else None
@@ -148,9 +179,9 @@ def insert_pin(
         con = sqlite3.connect(_sqlite_path)
         cur = con.execute(
             """INSERT INTO pinned_charts
-               (session_id, question, sql_query, chart_type, chart_config, rows_json)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (session_id, question, sql_query, chart_type, chart_config_str, rows_str),
+               (session_id, question, sql_query, chart_type, chart_config, rows_json, x, y, width, height)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (session_id, question, sql_query, chart_type, chart_config_str, rows_str, x, y, width, height),
         )
         pin_id = cur.lastrowid
         con.commit()
@@ -163,9 +194,9 @@ def insert_pin(
             result = conn.execute(
                 sqlalchemy.text("""
                     INSERT INTO pinned_charts
-                    (session_id, question, sql_query, chart_type, chart_config, rows_json)
+                    (session_id, question, sql_query, chart_type, chart_config, rows_json, x, y, width, height)
                     VALUES (:session_id, :question, :sql_query, :chart_type,
-                            :chart_config::jsonb, :rows_json::jsonb)
+                            :chart_config::jsonb, :rows_json::jsonb, :x, :y, :width, :height)
                     RETURNING id
                 """),
                 {
@@ -175,9 +206,25 @@ def insert_pin(
                     "chart_type": chart_type,
                     "chart_config": chart_config_str,
                     "rows_json": rows_str,
+                    "x": x,
+                    "y": y,
+                    "width": width,
+                    "height": height,
                 },
             )
             return result.scalar_one()
+
+
+def _normalize_pin_row(r: dict) -> dict:
+    r["chart_config"] = json.loads(r["chart_config"]) if isinstance(r.get("chart_config"), str) else (r.get("chart_config") or {})
+    r["rows_json"] = json.loads(r["rows_json"]) if isinstance(r.get("rows_json"), str) else r.get("rows_json")
+    if r.get("created_at"):
+        r["created_at"] = str(r["created_at"])
+    r.setdefault("x", 0)
+    r.setdefault("y", 0)
+    r.setdefault("width", 600)
+    r.setdefault("height", 400)
+    return r
 
 
 def list_pins(session_id: str) -> list[dict]:
@@ -188,11 +235,8 @@ def list_pins(session_id: str) -> list[dict]:
             "SELECT * FROM pinned_charts WHERE session_id = ? ORDER BY created_at DESC",
             (session_id,),
         )
-        rows = [dict(r) for r in cur.fetchall()]
+        rows = [_normalize_pin_row(dict(r)) for r in cur.fetchall()]
         con.close()
-        for r in rows:
-            r["chart_config"] = json.loads(r["chart_config"]) if r["chart_config"] else {}
-            r["rows_json"] = json.loads(r["rows_json"]) if r["rows_json"] else None
         return rows
     else:
         import sqlalchemy
@@ -201,24 +245,48 @@ def list_pins(session_id: str) -> list[dict]:
             result = conn.execute(
                 sqlalchemy.text("""
                     SELECT id, session_id, question, sql_query, chart_type,
-                           chart_config, rows_json, created_at
+                           chart_config, rows_json, created_at, x, y, width, height
                     FROM pinned_charts
                     WHERE session_id = :session_id
                     ORDER BY created_at DESC
                 """),
                 {"session_id": session_id},
             )
-            rows = []
-            for row in result.mappings():
-                r = dict(row)
-                if isinstance(r.get("chart_config"), str):
-                    r["chart_config"] = json.loads(r["chart_config"])
-                if isinstance(r.get("rows_json"), str):
-                    r["rows_json"] = json.loads(r["rows_json"])
-                if r.get("created_at"):
-                    r["created_at"] = str(r["created_at"])
-                rows.append(r)
-            return rows
+            return [_normalize_pin_row(dict(row)) for row in result.mappings()]
+
+
+def update_pin_layout(pin_id: int, x: int, y: int, width: int, height: int) -> dict | None:
+    if _config and _config.db_type == "sqlite":
+        con = sqlite3.connect(_sqlite_path)
+        con.row_factory = sqlite3.Row
+        cur = con.execute(
+            "UPDATE pinned_charts SET x=?, y=?, width=?, height=? WHERE id=?",
+            (x, y, width, height, pin_id),
+        )
+        if cur.rowcount == 0:
+            con.close()
+            return None
+        con.commit()
+        cur2 = con.execute("SELECT * FROM pinned_charts WHERE id = ?", (pin_id,))
+        row = cur2.fetchone()
+        con.close()
+        return _normalize_pin_row(dict(row)) if row else None
+    else:
+        import sqlalchemy
+
+        with _engine.begin() as conn:
+            result = conn.execute(
+                sqlalchemy.text("""
+                    UPDATE pinned_charts
+                    SET x = :x, y = :y, width = :width, height = :height
+                    WHERE id = :id
+                    RETURNING id, session_id, question, sql_query, chart_type,
+                              chart_config, rows_json, created_at, x, y, width, height
+                """),
+                {"x": x, "y": y, "width": width, "height": height, "id": pin_id},
+            )
+            row = result.mappings().fetchone()
+            return _normalize_pin_row(dict(row)) if row else None
 
 
 def update_pin_config(pin_id: int, chart_config: dict) -> dict | None:
@@ -238,12 +306,7 @@ def update_pin_config(pin_id: int, chart_config: dict) -> dict | None:
         cur2 = con.execute("SELECT * FROM pinned_charts WHERE id = ?", (pin_id,))
         row = cur2.fetchone()
         con.close()
-        if not row:
-            return None
-        r = dict(row)
-        r["chart_config"] = json.loads(r["chart_config"]) if r["chart_config"] else {}
-        r["rows_json"] = json.loads(r["rows_json"]) if r["rows_json"] else None
-        return r
+        return _normalize_pin_row(dict(row)) if row else None
     else:
         import sqlalchemy
 
@@ -254,21 +317,12 @@ def update_pin_config(pin_id: int, chart_config: dict) -> dict | None:
                     SET chart_config = :chart_config::jsonb
                     WHERE id = :id
                     RETURNING id, session_id, question, sql_query, chart_type,
-                              chart_config, rows_json, created_at
+                              chart_config, rows_json, created_at, x, y, width, height
                 """),
                 {"chart_config": chart_config_str, "id": pin_id},
             )
             row = result.mappings().fetchone()
-            if not row:
-                return None
-            r = dict(row)
-            if isinstance(r.get("chart_config"), str):
-                r["chart_config"] = json.loads(r["chart_config"])
-            if isinstance(r.get("rows_json"), str):
-                r["rows_json"] = json.loads(r["rows_json"])
-            if r.get("created_at"):
-                r["created_at"] = str(r["created_at"])
-            return r
+            return _normalize_pin_row(dict(row)) if row else None
 
 
 def delete_pin(pin_id: int) -> bool:
