@@ -1,10 +1,18 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState, useCallback, useRef } from 'react';
-import { Pin, MessageCircle, X, Moon, Sun } from 'lucide-react';
+import { Pin, MessageCircle, X, Moon, Sun, Filter, XCircle } from 'lucide-react';
 import { APP_TITLE, APP_SUBTITLE, PRIMARY_COLOR, LOGO_URL } from '../config/branding';
-import { useGenieChat, type Message } from '../hooks/useGenieChat';
+import { useGenieChat, type Message, type ChartEvent } from '../hooks/useGenieChat';
 import { ChatPanel } from '../components/ChatPanel';
 import { PinnedCharts } from '../components/PinnedCharts';
+
+const FILTER_OPTIONS = {
+  product: ['All', 'DesignPro Pro', 'DesignPro Free', 'DesignPro Enterprise'],
+  feature_area: ['All', 'export', 'ui', 'performance', 'collaboration', 'api', 'mobile', 'pricing', 'onboarding'],
+  ai_category: ['All', 'bug_report', 'feature_request', 'general_feedback', 'praise'],
+} as const;
+
+type FilterKey = keyof typeof FILTER_OPTIONS;
 
 export const Route = createFileRoute('/')({
   component: App,
@@ -36,6 +44,18 @@ function App() {
   const panelWidthRef = useRef(panelWidth);
   panelWidthRef.current = panelWidth;
 
+  // Filter bar state
+  const [activeFilters, setActiveFilters] = useState<Record<FilterKey, string>>({
+    product: 'All',
+    feature_area: 'All',
+    ai_category: 'All',
+  });
+  const [filterOverrides, setFilterOverrides] = useState<Map<number, string>>(new Map());
+  const [isFiltering, setIsFiltering] = useState(false);
+
+  // Track pin IDs for filter targeting
+  const [pinnedDbIds, setPinnedDbIds] = useState<number[]>([]);
+
   // Badge: count new pins since drawer was last opened
   const [newPinCount, setNewPinCount] = useState(0);
 
@@ -47,44 +67,114 @@ function App() {
     });
   };
 
-  const handlePinChart = useCallback(
-    async (msg: Message) => {
-      if (!msg.chart || pinnedMsgIds.has(msg.id)) return;
-
-      const offset = pinnedMsgIds.size * 20;
-      const question =
-        msg.content ||
-        messages.find((_, i) => messages[i + 1]?.id === msg.id)?.content ||
-        'Pinned chart';
-
+  const doPinChart = useCallback(
+    async (chartHtml: string, sql: string | null | undefined, question: string) => {
+      const offset = pinnedDbIds.length * 20;
       try {
-        await fetch('/api/pins', {
+        const res = await fetch('/api/pins', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             session_id: sessionId,
             question,
-            sql_query: msg.sql || msg.chart.sql || null,
+            sql_query: sql || null,
             chart_type: 'html',
-            chart_config: msg.chart.html,
-            rows_json: (msg.chart.rows as any[]) ?? null,
+            chart_config: chartHtml,
+            rows_json: null,
             x: offset,
             y: offset,
             width: 600,
             height: 400,
           }),
         });
+        if (res.ok) {
+          const pin = await res.json();
+          if (pin?.id) {
+            setPinnedDbIds((prev) => [...prev, pin.id]);
+          }
+        }
       } catch {
-        // non-critical; agent pin_chart tool may have already handled it
+        // non-critical
       }
+    },
+    [sessionId, pinnedDbIds],
+  );
+
+  const handlePinChart = useCallback(
+    async (msg: Message) => {
+      if (!msg.chart || pinnedMsgIds.has(msg.id)) return;
+
+      const question =
+        msg.content ||
+        messages.find((_, i) => messages[i + 1]?.id === msg.id)?.content ||
+        'Pinned chart';
+
+      await doPinChart(msg.chart.html, msg.sql || msg.chart.sql, question);
 
       setPinnedMsgIds((prev) => new Set([...prev, msg.id]));
       setPinRefresh((n) => n + 1);
       setPinCount((n) => n + 1);
       setNewPinCount((n) => n + 1);
     },
-    [sessionId, messages, pinnedMsgIds],
+    [sessionId, messages, pinnedMsgIds, doPinChart],
   );
+
+  const handlePinChartEvent = useCallback(
+    async (msg: Message, event: ChartEvent, idx: number) => {
+      const key = `${msg.id}-${idx}`;
+      if (pinnedMsgIds.has(key)) return;
+
+      const question = event.title || msg.content || `Chart ${idx + 1}`;
+      await doPinChart(event.html, event.sql, question);
+
+      setPinnedMsgIds((prev) => new Set([...prev, key]));
+      setPinRefresh((n) => n + 1);
+      setPinCount((n) => n + 1);
+      setNewPinCount((n) => n + 1);
+    },
+    [pinnedMsgIds, doPinChart],
+  );
+
+  const applyFilter = useCallback(async (filters: Record<FilterKey, string>, pinIds: number[]) => {
+    const activeEntries = Object.entries(filters).filter(([, v]) => v !== 'All') as [FilterKey, string][];
+    if (activeEntries.length === 0 || pinIds.length === 0) {
+      setFilterOverrides(new Map());
+      return;
+    }
+    setIsFiltering(true);
+    try {
+      // Apply filters one at a time for each active dimension
+      let currentIds = pinIds;
+      const newOverrides = new Map<number, string>();
+      for (const [col, val] of activeEntries) {
+        const res = await fetch('/api/filter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId, filter_col: col, filter_val: val, pin_ids: currentIds }),
+        });
+        if (res.ok) {
+          const data: { pin_id: number; chart_html: string }[] = await res.json();
+          data.forEach((d) => newOverrides.set(d.pin_id, d.chart_html));
+        }
+      }
+      setFilterOverrides(newOverrides);
+    } catch {
+      // silently fail
+    } finally {
+      setIsFiltering(false);
+    }
+  }, [sessionId]);
+
+  const handleFilterChange = useCallback((key: FilterKey, value: string) => {
+    const next = { ...activeFilters, [key]: value };
+    setActiveFilters(next);
+    applyFilter(next, pinnedDbIds);
+  }, [activeFilters, pinnedDbIds, applyFilter]);
+
+  const clearFilters = useCallback(() => {
+    setActiveFilters({ product: 'All', feature_area: 'All', ai_category: 'All' });
+    setFilterOverrides(new Map());
+  }, []);
 
   // Resize panel by dragging its left edge
   const startPanelResize = (e: React.MouseEvent) => {
@@ -158,8 +248,40 @@ function App() {
       </header>
 
       {/* Full-width canvas */}
-      <div className={`flex-1 overflow-auto relative ${chatOpen ? 'pointer-events-none' : ''}`}>
-        <PinnedCharts sessionId={sessionId} refreshTrigger={pinRefresh} />
+      <div className={`flex-1 overflow-auto relative flex flex-col ${chatOpen ? 'pointer-events-none' : ''}`}>
+        {/* Filter Bar — only visible when there are pinned charts */}
+        {pinCount > 0 && (
+          <div className="flex items-center gap-3 px-4 py-2 border-b bg-card shrink-0 flex-wrap">
+            <Filter size={13} className="text-muted-foreground shrink-0" />
+            {(Object.entries(FILTER_OPTIONS) as [FilterKey, readonly string[]][]).map(([key, opts]) => (
+              <div key={key} className="flex items-center gap-1.5">
+                <label className="text-xs text-muted-foreground capitalize">{key.replace('_', ' ')}:</label>
+                <select
+                  value={activeFilters[key]}
+                  onChange={(e) => handleFilterChange(key, e.target.value)}
+                  disabled={isFiltering}
+                  className="text-xs rounded border border-input bg-background px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+                >
+                  {opts.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+              </div>
+            ))}
+            {Object.values(activeFilters).some((v) => v !== 'All') && (
+              <button
+                onClick={clearFilters}
+                disabled={isFiltering}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+              >
+                <XCircle size={13} />
+                Clear filters
+              </button>
+            )}
+            {isFiltering && <span className="text-xs text-muted-foreground animate-pulse">Updating charts…</span>}
+          </div>
+        )}
+        <div className="flex-1 overflow-auto relative">
+          <PinnedCharts sessionId={sessionId} refreshTrigger={pinRefresh} externalHtmlOverrides={filterOverrides} />
+        </div>
       </div>
 
       {/* Floating "Ask Genie 💬" button */}
@@ -222,6 +344,7 @@ function App() {
                 onSend={sendMessage}
                 onStop={stop}
                 onPinChart={handlePinChart}
+                onPinChartEvent={handlePinChartEvent}
                 pinnedIds={pinnedMsgIds}
                 sessionId={sessionId}
               />

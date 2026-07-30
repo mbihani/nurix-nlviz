@@ -5,6 +5,9 @@ export type ChartEvent = {
   html: string;
   sql: string;
   columns?: { name: string; type: string }[];
+  chart_index?: number;
+  chart_total?: number;
+  title?: string;
 };
 
 export type SSEEvent =
@@ -22,6 +25,7 @@ export type Message = {
   thinking?: string;
   sql?: string;
   chart?: ChartEvent;
+  charts?: ChartEvent[];
   columns?: { name: string; type: string }[];
   rows?: unknown[][];
   isLoading?: boolean;
@@ -143,13 +147,20 @@ function handleSSEEvent(
         case 'rows':
           return { ...m, columns: event.columns, rows: event.rows };
 
-        case 'chart':
+        case 'chart': {
+          const isMulti = typeof event.chart_total === 'number' && event.chart_total > 1;
+          if (isMulti) {
+            const charts = [...(m.charts ?? [])];
+            charts[event.chart_index ?? charts.length] = event;
+            return { ...m, charts, content: m.content || '', thinking: undefined };
+          }
           return {
             ...m,
             chart: event,
-            content: m.content || 'Here is the visualization:',
+            content: m.content || '',
             thinking: undefined,
           };
+        }
 
         case 'done':
           return { ...m, isLoading: false, thinking: undefined };

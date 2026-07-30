@@ -7,10 +7,10 @@ from pydantic import BaseModel
 
 from .._metadata import api_prefix
 from .agent import run_chat_agent, _get_token
-from .chart_router import refine_chart_html
+from .chart_router import generate_chart_html, refine_chart_html
 from .config import AppConfig
 from .logger import logger
-from .models import ChatRequest, HealthOut, PinIn, PinOut, RefineRequest
+from .models import ChatRequest, FilterRequest, HealthOut, PinIn, PinOut, RefineRequest
 from . import db as db_module
 
 
@@ -149,3 +149,78 @@ async def delete_pin(pin_id: int):
     if not deleted:
         raise HTTPException(status_code=404, detail="Pin not found")
     return {"deleted": True}
+
+
+@api.post("/filter", operation_id="applyFilter")
+async def apply_filter(body: FilterRequest, config: ConfigDep):
+    """Re-run pinned chart queries with an injected WHERE filter and regenerate HTML."""
+    import re
+
+    try:
+        token = await _get_token(config)
+        results = []
+
+        for pin_id in body.pin_ids:
+            # Load current pin
+            pins = db_module.list_pins(body.session_id)
+            pin = next((p for p in pins if p["id"] == pin_id), None)
+            if not pin or not pin.get("sql_query"):
+                continue
+
+            sql = pin["sql_query"].strip().rstrip(";")
+
+            # Sanitize filter_col and filter_val to prevent injection
+            safe_col = re.sub(r"[^a-zA-Z0-9_]", "", body.filter_col)
+            safe_val = body.filter_val.replace("'", "''")
+
+            if not safe_col:
+                continue
+
+            if body.filter_val in ("", "All", "all"):
+                filtered_sql = sql
+            elif re.search(r"\bWHERE\b", sql, re.IGNORECASE):
+                filtered_sql = f"{sql} AND {safe_col} = '{safe_val}'"
+            else:
+                filtered_sql = f"{sql} WHERE {safe_col} = '{safe_val}'"
+
+            # Execute via Databricks Statement Execution API
+            try:
+                from databricks.sdk import WorkspaceClient
+                ws = WorkspaceClient()
+                stmt = ws.statement_execution.execute_statement(
+                    warehouse_id=config.sql_warehouse_id,
+                    statement=filtered_sql,
+                    wait_timeout="30s",
+                )
+                manifest = stmt.manifest
+                result = stmt.result
+                if manifest and result and stmt.status and stmt.status.state.value == "SUCCEEDED":
+                    schema_cols = (manifest.schema.columns if manifest.schema else []) or []
+                    data_array = result.data_array or []
+                    columns = [{"name": c.name, "type": c.type_text or "string"} for c in schema_cols]
+                    rows = []
+                    for row in data_array:
+                        rows.append([v for v in row])
+
+                    chart_html = await generate_chart_html(
+                        columns=columns,
+                        rows=rows[:200],
+                        question=pin["question"],
+                        config=config,
+                        token=token,
+                    )
+                    # Persist updated chart
+                    db_module.update_pin_config(pin_id, chart_html)
+                    results.append({"pin_id": pin_id, "chart_html": chart_html})
+                else:
+                    # Return current chart unchanged if query fails
+                    results.append({"pin_id": pin_id, "chart_html": pin["chart_config"]})
+            except Exception as exc:
+                logger.warning(f"Filter re-run failed for pin {pin_id}: {exc}")
+                results.append({"pin_id": pin_id, "chart_html": pin["chart_config"]})
+
+        return results
+
+    except Exception as exc:
+        logger.error(f"Error applying filter: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Trash2, Pin, X } from 'lucide-react';
+import { Trash2, Pin, X, Pencil } from 'lucide-react';
 import { ChartRenderer } from './ChartRenderer';
 
 interface PinnedChart {
@@ -27,6 +27,7 @@ interface CardLayout {
 interface PinnedChartsProps {
   sessionId: string;
   refreshTrigger?: number;
+  externalHtmlOverrides?: Map<number, string>;
 }
 
 const MIN_W = 320;
@@ -37,11 +38,16 @@ function snap(v: number) {
   return Math.round(v / GRID) * GRID;
 }
 
-export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
+export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides }: PinnedChartsProps) {
   const [pins, setPins] = useState<PinnedChart[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<PinnedChart | null>(null);
   const [cardLayouts, setCardLayouts] = useState<Map<number, CardLayout>>(new Map());
+  const [refiningPin, setRefiningPin] = useState<{ id: number; html: string } | null>(null);
+  const [refineInput, setRefineInput] = useState('');
+  const [isRefining, setIsRefining] = useState(false);
+  const [refineError, setRefineError] = useState('');
+  const refineInputRef = useRef<HTMLInputElement>(null);
 
   const loadPins = useCallback(async () => {
     setLoading(true);
@@ -98,6 +104,43 @@ export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
     }
   };
 
+  const handleRefinePin = useCallback(async () => {
+    if (!refiningPin || !refineInput.trim() || isRefining) return;
+    setIsRefining(true);
+    setRefineError('');
+    try {
+      const res = await fetch('/api/refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          chart_html: refiningPin.html,
+          refine_instruction: refineInput.trim(),
+          columns: [],
+        }),
+      });
+      const data = await res.json();
+      if (data.chart_html && typeof data.chart_html === 'string') {
+        // Update pin in state
+        setPins((prev) => prev.map((p) => p.id === refiningPin.id ? { ...p, chart_config: data.chart_html } : p));
+        // Persist via PATCH
+        await fetch(`/api/pins/${refiningPin.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chart_config: data.chart_html }),
+        });
+        setRefiningPin(null);
+        setRefineInput('');
+      } else {
+        setRefineError('Refinement returned an invalid chart. Original kept.');
+      }
+    } catch {
+      setRefineError('Refinement failed. Please try again.');
+    } finally {
+      setIsRefining(false);
+    }
+  }, [refiningPin, refineInput, isRefining, sessionId]);
+
   const getLayout = (pin: PinnedChart): CardLayout =>
     cardLayouts.get(pin.id) ?? { x: pin.x ?? 0, y: pin.y ?? 0, width: pin.width ?? 600, height: pin.height ?? 400 };
 
@@ -133,19 +176,62 @@ export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
           backgroundSize: '20px 20px',
         }}
       >
-        {pins.map((pin, idx) => (
-          <DraggableCard
-            key={pin.id}
-            pin={pin}
-            layout={getLayout(pin)}
-            animationDelay={idx * 60}
-            onLayoutChange={(l) => setCardLayouts((prev) => new Map(prev).set(pin.id, l))}
-            onLayoutCommit={(l) => persistLayout(pin.id, l)}
-            onDelete={() => handleDelete(pin.id)}
-            onExpand={() => setExpanded(pin)}
-          />
-        ))}
+        {pins.map((pin, idx) => {
+          const overrideHtml = externalHtmlOverrides?.get(pin.id);
+          return (
+            <DraggableCard
+              key={pin.id}
+              pin={overrideHtml ? { ...pin, chart_config: overrideHtml } : pin}
+              layout={getLayout(pin)}
+              animationDelay={idx * 60}
+              onLayoutChange={(l) => setCardLayouts((prev) => new Map(prev).set(pin.id, l))}
+              onLayoutCommit={(l) => persistLayout(pin.id, l)}
+              onDelete={() => handleDelete(pin.id)}
+              onExpand={() => setExpanded(pin)}
+              onRefine={(id, html) => { setRefiningPin({ id, html }); setRefineInput(''); setRefineError(''); }}
+            />
+          );
+        })}
       </div>
+
+      {/* Refine modal */}
+      {refiningPin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => { setRefiningPin(null); setRefineError(''); }}>
+          <div className="bg-card rounded-xl shadow-2xl w-full max-w-md p-5"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-foreground">Refine chart</h3>
+              <button onClick={() => { setRefiningPin(null); setRefineError(''); }}
+                className="p-1 rounded hover:bg-accent text-muted-foreground"><X size={16} /></button>
+            </div>
+            {isRefining ? (
+              <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                <span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" />
+                <span className="ml-1">Refining chart…</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  ref={refineInputRef}
+                  type="text"
+                  value={refineInput}
+                  onChange={(e) => setRefineInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleRefinePin(); if (e.key === 'Escape') { setRefiningPin(null); setRefineError(''); } }}
+                  placeholder="e.g. make it a line chart, sort descending…"
+                  className="flex-1 text-sm rounded-lg border border-input bg-background px-3 py-2 placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  autoFocus
+                />
+                <button onClick={handleRefinePin} disabled={!refineInput.trim() || isRefining}
+                  className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-40 shrink-0">
+                  Apply
+                </button>
+              </div>
+            )}
+            {refineError && <p className="mt-2 text-xs text-destructive">{refineError}</p>}
+          </div>
+        </div>
+      )}
 
       {/* Expand modal */}
       {expanded && (
@@ -200,6 +286,7 @@ interface DraggableCardProps {
   onLayoutCommit: (l: CardLayout) => void;
   onDelete: () => void;
   onExpand: () => void;
+  onRefine: (pinId: number, currentHtml: string) => void;
 }
 
 function DraggableCard({
@@ -210,6 +297,7 @@ function DraggableCard({
   onLayoutCommit,
   onDelete,
   onExpand,
+  onRefine,
 }: DraggableCardProps) {
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
@@ -309,6 +397,13 @@ function DraggableCard({
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
             </svg>
+          </button>
+          <button
+            onClick={() => onRefine(pin.id, pin.chart_config)}
+            className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+            title="Refine chart"
+          >
+            <Pencil size={13} />
           </button>
           <button
             onClick={onDelete}

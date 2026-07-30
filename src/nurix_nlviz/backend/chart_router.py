@@ -219,3 +219,78 @@ async def refine_chart_html(
         refine_instruction=refine_instruction,
         current_html=current_html,
     )
+
+
+_MULTI_CHART_KEYWORDS = {
+    " and ", " also ", " both ", " compare ", " vs ", " versus ",
+    "dashboard", "overview", "multiple", "breakdown and", "trend and",
+}
+
+
+def _is_multi_chart_question(question: str) -> bool:
+    q = question.lower()
+    return any(kw in q for kw in _MULTI_CHART_KEYWORDS)
+
+
+async def decompose_question(
+    question: str,
+    columns: list[dict],
+    rows: list[list],
+    config=None,
+    token: str = "",
+) -> list[dict] | None:
+    """
+    Ask Claude if the question should produce multiple charts.
+    Returns a list of specs [{title, chart_type, description}] (max 4) or None.
+    """
+    if not _is_multi_chart_question(question):
+        return None
+
+    try:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(base_url=config.ai_gateway_base_url, api_key=token)
+
+        col_names = [c["name"] for c in columns]
+        data_preview = json.dumps({"columns": col_names, "rows": rows[:5]}, default=str)
+
+        system = (
+            "You are a data visualization decomposer. "
+            "Given a question and data columns, decide if the question calls for multiple charts. "
+            "If yes, return a JSON array of chart specs (max 4). "
+            "If no or uncertain, return null. "
+            "Each spec: {\"title\": str, \"chart_type\": str, \"description\": str}. "
+            "chart_type must be one of: bar, line, pie, scatter, counter. "
+            "Output ONLY valid JSON — no markdown, no explanation."
+        )
+        user_msg = (
+            f"Question: {question}\n\n"
+            f"Available columns: {', '.join(col_names)}\n\n"
+            f"Data sample:\n{data_preview}\n\n"
+            "Should this produce multiple charts? If yes, return a JSON array of specs (max 4). "
+            "If no, return null."
+        )
+
+        response = await client.chat.completions.create(
+            model=config.claude_model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=512,
+        )
+
+        raw = (response.choices[0].message.content or "").strip()
+        if raw.startswith("```"):
+            lines = raw.split("\n")
+            raw = "\n".join(lines[1:])
+            if raw.endswith("```"):
+                raw = raw[:-3].strip()
+
+        parsed = json.loads(raw)
+        if isinstance(parsed, list) and len(parsed) > 1:
+            return parsed[:4]
+        return None
+
+    except Exception:
+        return None

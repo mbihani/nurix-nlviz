@@ -15,7 +15,7 @@ import mlflow
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
-from .chart_router import generate_chart_html
+from .chart_router import decompose_question, generate_chart_html
 from .config import AppConfig
 from .logger import logger
 
@@ -229,21 +229,51 @@ class GenieVizAgent:
                                         yield _make_event({"type": "sql", "sql": collected_sql})
                                         break
 
-            # Emit chart after collecting rows
+            # Emit chart(s) after collecting rows
             if collected_rows is not None and collected_columns is not None:
-                chart_html = await generate_chart_html(
-                    collected_columns,
-                    collected_rows[:200],
+                specs = await decompose_question(
                     question,
+                    collected_columns,
+                    collected_rows[:5],
                     config=config,
                     token=token,
                 )
-                yield _make_event({
-                    "type": "chart",
-                    "html": chart_html,
-                    "sql": collected_sql,
-                    "columns": collected_columns,
-                })
+                if specs and len(specs) > 1:
+                    total = len(specs)
+                    for idx, spec in enumerate(specs):
+                        spec_question = spec.get("description") or spec.get("title") or question
+                        chart_html = await generate_chart_html(
+                            collected_columns,
+                            collected_rows[:200],
+                            spec_question,
+                            config=config,
+                            token=token,
+                        )
+                        yield _make_event({
+                            "type": "chart",
+                            "html": chart_html,
+                            "sql": collected_sql,
+                            "columns": collected_columns,
+                            "chart_index": idx,
+                            "chart_total": total,
+                            "title": spec.get("title", f"Chart {idx + 1}"),
+                        })
+                else:
+                    chart_html = await generate_chart_html(
+                        collected_columns,
+                        collected_rows[:200],
+                        question,
+                        config=config,
+                        token=token,
+                    )
+                    yield _make_event({
+                        "type": "chart",
+                        "html": chart_html,
+                        "sql": collected_sql,
+                        "columns": collected_columns,
+                        "chart_index": 0,
+                        "chart_total": 1,
+                    })
             elif collected_sql:
                 yield _make_event({"type": "thinking", "text": "Processing results..."})
 

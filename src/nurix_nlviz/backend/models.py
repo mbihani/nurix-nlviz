@@ -46,3 +46,10 @@ class RefineRequest(BaseModel):
     chart_html: str
     refine_instruction: str
     columns: list[dict] | None = None
+
+
+class FilterRequest(BaseModel):
+    session_id: str
+    filter_col: str
+    filter_val: str
+    pin_ids: list[int]

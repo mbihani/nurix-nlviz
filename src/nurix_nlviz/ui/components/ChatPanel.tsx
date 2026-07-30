@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Send, Square, Database, ChevronDown, ChevronUp } from 'lucide-react';
-import type { Message } from '../hooks/useGenieChat';
+import type { Message, ChartEvent } from '../hooks/useGenieChat';
 import { ChartRenderer } from './ChartRenderer';
 
 const SUGGESTED = [
@@ -15,6 +15,7 @@ interface ChatPanelProps {
   onSend: (q: string) => void;
   onStop: () => void;
   onPinChart: (msg: Message) => void;
+  onPinChartEvent?: (msg: Message, event: ChartEvent, idx: number) => void;
   pinnedIds: Set<string>;
   sessionId: string;
 }
@@ -25,6 +26,7 @@ export function ChatPanel({
   onSend,
   onStop,
   onPinChart,
+  onPinChartEvent,
   pinnedIds,
   sessionId,
 }: ChatPanelProps) {
@@ -79,6 +81,7 @@ export function ChatPanel({
             key={msg.id}
             msg={msg}
             onPin={onPinChart}
+            onPinChartEvent={onPinChartEvent}
             isPinned={pinnedIds.has(msg.id)}
             sessionId={sessionId}
           />
@@ -124,14 +127,107 @@ export function ChatPanel({
   );
 }
 
+function MultiChartCard({
+  chartEvent,
+  sessionId,
+  onPin,
+}: {
+  chartEvent: ChartEvent;
+  sessionId: string;
+  onPin: () => void;
+}) {
+  const [refineOpen, setRefineOpen] = useState(false);
+  const [refineInput, setRefineInput] = useState('');
+  const [isRefining, setIsRefining] = useState(false);
+  const [currentHtml, setCurrentHtml] = useState(chartEvent.html);
+  const refineInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (refineOpen) refineInputRef.current?.focus();
+  }, [refineOpen]);
+
+  const handleRefine = async () => {
+    const instruction = refineInput.trim();
+    if (!instruction || isRefining) return;
+    setIsRefining(true);
+    try {
+      const res = await fetch('/api/refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          chart_html: currentHtml,
+          refine_instruction: instruction,
+          columns: chartEvent.columns ?? [],
+        }),
+      });
+      const data = await res.json();
+      if (data.chart_html && typeof data.chart_html === 'string') {
+        setCurrentHtml(data.chart_html);
+        setRefineInput('');
+        setRefineOpen(false);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsRefining(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1">
+      {isRefining ? (
+        <div className="flex items-center justify-center h-[200px] bg-muted/20 rounded-lg">
+          <div className="bg-muted rounded-full px-3 py-2 flex items-center gap-1.5 text-muted-foreground text-xs">
+            <span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" />
+            <span className="ml-1">Refining…</span>
+          </div>
+        </div>
+      ) : (
+        <ChartRenderer html={currentHtml} height={200} />
+      )}
+      {refineOpen && (
+        <div className="flex items-center gap-1.5">
+          <input
+            ref={refineInputRef}
+            type="text"
+            value={refineInput}
+            onChange={(e) => setRefineInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleRefine(); if (e.key === 'Escape') setRefineOpen(false); }}
+            placeholder="Refine this chart…"
+            disabled={isRefining}
+            className="flex-1 text-xs rounded-lg border border-input bg-background px-3 py-1.5 placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+          />
+          <button onClick={handleRefine} disabled={!refineInput.trim() || isRefining}
+            className="h-7 w-7 flex items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 shrink-0 text-xs">
+            →
+          </button>
+        </div>
+      )}
+      <div className="flex items-center justify-end gap-1.5">
+        <button type="button" onClick={() => setRefineOpen((v) => !v)}
+          className="text-xs px-2 py-1 rounded-full border font-medium flex items-center gap-1 transition-colors bg-muted/40 hover:bg-muted text-muted-foreground border-border">
+          ✏️ Refine
+        </button>
+        <button type="button" onClick={onPin}
+          className="text-xs px-2 py-1 rounded-full border font-medium flex items-center gap-1 transition-colors bg-primary/10 hover:bg-primary/20 text-primary border-primary/20">
+          📌 Pin
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function MessageBubble({
   msg,
   onPin,
+  onPinChartEvent,
   isPinned,
   sessionId,
 }: {
   msg: Message;
   onPin: (msg: Message) => void;
+  onPinChartEvent?: (msg: Message, event: ChartEvent, idx: number) => void;
   isPinned: boolean;
   sessionId: string;
 }) {
@@ -245,7 +341,21 @@ function MessageBubble({
         </div>
       )}
 
-      {/* Chart */}
+      {/* Multi-chart grid */}
+      {msg.charts && msg.charts.length > 1 && (
+        <div className="grid grid-cols-2 gap-2">
+          {msg.charts.map((chartEvent, idx) => (
+            <MultiChartCard
+              key={idx}
+              chartEvent={chartEvent}
+              sessionId={sessionId}
+              onPin={() => onPinChartEvent ? onPinChartEvent(msg, chartEvent, idx) : onPin({ ...msg, chart: chartEvent })}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Single Chart */}
       {msg.chart && (
         <div>
           {isRefining ? (
@@ -317,8 +427,8 @@ function MessageBubble({
         </div>
       )}
 
-      {/* Text answer */}
-      {msg.content && !msg.isLoading && (
+      {/* Text answer — suppress generic filler when a chart is present */}
+      {msg.content && !msg.isLoading && !msg.chart && !(msg.charts && msg.charts.length > 0) && (
         <div className="text-sm text-foreground bg-muted/40 rounded-2xl rounded-tl-sm px-4 py-2 max-w-[90%]">
           {msg.content}
         </div>
