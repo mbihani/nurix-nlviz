@@ -14,7 +14,11 @@ from . import db as db_module
 
 
 class PinUpdateRequest(BaseModel):
-    chart_config: dict[str, Any]
+    chart_config: dict[str, Any] | None = None
+    x: int | None = None
+    y: int | None = None
+    width: int | None = None
+    height: int | None = None
 
 api = APIRouter(prefix=api_prefix)
 
@@ -76,6 +80,10 @@ async def create_pin(body: PinIn):
             chart_type=body.chart_type,
             chart_config=body.chart_config,
             rows_json=body.rows_json,
+            x=body.x,
+            y=body.y,
+            width=body.width,
+            height=body.height,
         )
         rows = db_module.list_pins(body.session_id)
         pin = next((r for r in rows if r["id"] == pin_id), None)
@@ -90,10 +98,25 @@ async def create_pin(body: PinIn):
 @api.patch("/pins/{pin_id}", response_model=PinOut, operation_id="updatePin")
 async def update_pin(pin_id: int, body: PinUpdateRequest):
     try:
-        updated = db_module.update_pin_config(pin_id, body.chart_config)
-        if not updated:
-            raise HTTPException(status_code=404, detail="Pin not found")
-        return PinOut(**updated)
+        # Layout-only update (x/y/width/height)
+        if body.x is not None or body.y is not None or body.width is not None or body.height is not None:
+            updated = db_module.update_pin_layout(
+                pin_id,
+                x=body.x if body.x is not None else 0,
+                y=body.y if body.y is not None else 0,
+                width=body.width if body.width is not None else 600,
+                height=body.height if body.height is not None else 400,
+            )
+            if not updated:
+                raise HTTPException(status_code=404, detail="Pin not found")
+            return PinOut(**updated)
+        # Config update
+        if body.chart_config is not None:
+            updated = db_module.update_pin_config(pin_id, body.chart_config)
+            if not updated:
+                raise HTTPException(status_code=404, detail="Pin not found")
+            return PinOut(**updated)
+        raise HTTPException(status_code=400, detail="Nothing to update")
     except HTTPException:
         raise
     except Exception as exc:
