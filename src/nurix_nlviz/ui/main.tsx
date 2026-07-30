@@ -1,3 +1,5 @@
+// @ts-ignore
+window.global = window;
 import '@/lib/auth-interceptor';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
