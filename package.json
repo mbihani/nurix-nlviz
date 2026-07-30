@@ -17,7 +17,6 @@
         "motion": "12.24.10",
         "plotly.js": "2.35.3",
         "react": "19.2.3",
-        "react-chart-editor": "0.46.1",
         "react-dom": "19.2.3",
         "react-error-boundary": "6.0.2",
         "react-plotly.js": "2.6.0",

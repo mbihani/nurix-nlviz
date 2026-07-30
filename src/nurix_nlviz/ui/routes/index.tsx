@@ -47,7 +47,7 @@ function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             session_id: sessionId,
-            question: msg.content || messages.find((m, i) => messages[i + 1]?.id === msg.id)?.content || 'Pinned chart',
+            question: msg.content || messages.find((_, i) => messages[i + 1]?.id === msg.id)?.content || 'Pinned chart',
             sql_query: msg.sql || msg.chart.sql || null,
             chart_type: msg.chart.figure?.data?.[0]?.type ?? 'plotly',
             chart_config: msg.chart.figure,
