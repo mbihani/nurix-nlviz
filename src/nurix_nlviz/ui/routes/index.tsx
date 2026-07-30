@@ -223,6 +223,7 @@ function App() {
                 onStop={stop}
                 onPinChart={handlePinChart}
                 pinnedIds={pinnedMsgIds}
+                sessionId={sessionId}
               />
             </div>
           </div>

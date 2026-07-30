@@ -50,6 +50,15 @@ export interface PinUpdateRequest {
   y?: number | null;
 }
 
+export interface RefineRequest {
+  chart_config: Record<string, unknown>;
+  columns?: Record<string, unknown>[] | null;
+  original_question?: string | null;
+  refine_instruction: string;
+  session_id: string;
+  sql_query?: string | null;
+}
+
 export interface ValidationError {
   ctx?: Record<string, unknown>;
   input?: unknown;
@@ -192,5 +201,20 @@ export const deletePin = async (params: DeletePinParams, options?: RequestInit):
 
 export function useDeletePin(options?: { mutation?: UseMutationOptions<{ data: unknown }, ApiError, { params: DeletePinParams }> }) {
   return useMutation({ mutationFn: (vars) => deletePin(vars.params), ...options?.mutation });
+}
+
+export const refineChart = async (data: RefineRequest, options?: RequestInit): Promise<{ data: unknown }> => {
+  const res = await fetch("/api/refine", { ...options, method: "POST", headers: { "Content-Type": "application/json", ...options?.headers }, body: JSON.stringify(data) });
+  if (!res.ok) {
+    const body = await res.text();
+    let parsed: unknown;
+    try { parsed = JSON.parse(body); } catch { parsed = body; }
+    throw new ApiError(res.status, res.statusText, parsed);
+  }
+  return { data: await res.json() };
+};
+
+export function useRefineChart(options?: { mutation?: UseMutationOptions<{ data: unknown }, ApiError, RefineRequest> }) {
+  return useMutation({ mutationFn: (data) => refineChart(data), ...options?.mutation });
 }
 

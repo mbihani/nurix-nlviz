@@ -16,6 +16,7 @@ interface ChatPanelProps {
   onStop: () => void;
   onPinChart: (msg: Message) => void;
   pinnedIds: Set<string>;
+  sessionId: string;
 }
 
 export function ChatPanel({
@@ -25,6 +26,7 @@ export function ChatPanel({
   onStop,
   onPinChart,
   pinnedIds,
+  sessionId,
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -78,6 +80,7 @@ export function ChatPanel({
             msg={msg}
             onPin={onPinChart}
             isPinned={pinnedIds.has(msg.id)}
+            sessionId={sessionId}
           />
         ))}
         <div ref={bottomRef} />
@@ -125,12 +128,69 @@ function MessageBubble({
   msg,
   onPin,
   isPinned,
+  sessionId,
 }: {
   msg: Message;
   onPin: (msg: Message) => void;
   isPinned: boolean;
+  sessionId: string;
 }) {
   const [sqlOpen, setSqlOpen] = useState(false);
+  const [refineOpen, setRefineOpen] = useState(false);
+  const [refineInput, setRefineInput] = useState('');
+  const [isRefining, setIsRefining] = useState(false);
+  const [refineError, setRefineError] = useState('');
+  const [currentFigure, setCurrentFigure] = useState(msg.chart?.figure);
+  const refineInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (refineOpen) refineInputRef.current?.focus();
+  }, [refineOpen]);
+
+  const handleRefine = async () => {
+    const instruction = refineInput.trim();
+    if (!instruction || isRefining || !currentFigure) return;
+    setIsRefining(true);
+    setRefineError('');
+    try {
+      const res = await fetch('/api/refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          original_question: msg.content,
+          sql_query: msg.sql,
+          chart_config: currentFigure,
+          refine_instruction: instruction,
+          columns: msg.chart?.columns ?? [],
+        }),
+      });
+      const data = await res.json();
+      if (data.chart_config && typeof data.chart_config === 'object' && data.chart_config.data) {
+        setCurrentFigure(data.chart_config);
+        setRefineInput('');
+        setRefineOpen(false);
+      } else {
+        setRefineError('Refinement returned an invalid chart. Original kept.');
+      }
+    } catch {
+      setRefineError('Refinement failed. Please try again.');
+    } finally {
+      setIsRefining(false);
+    }
+  };
+
+  const handleRefineKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleRefine();
+    }
+    if (e.key === 'Escape') {
+      setRefineOpen(false);
+      setRefineInput('');
+      setRefineError('');
+    }
+  };
 
   if (msg.role === 'user') {
     return (
@@ -144,6 +204,8 @@ function MessageBubble({
 
   const columns = (msg.chart?.columns ?? msg.columns ?? []) as Array<{ name: string; type: string }>;
   const rows = (msg.chart?.rows ?? msg.rows ?? []) as any[][];
+
+  const pinnedFigureRef = { ...msg, chart: msg.chart ? { ...msg.chart, figure: currentFigure ?? msg.chart.figure } : msg.chart };
 
   return (
     <div className="flex flex-col gap-2">
@@ -181,16 +243,63 @@ function MessageBubble({
       {/* Chart */}
       {msg.chart && (
         <div>
-          <ChartRenderer
-            figure={msg.chart.figure}
-            columns={columns}
-            rows={rows}
-            height={260}
-            showToolbar={false}
-          />
-          <div className="mt-2 flex items-center justify-end">
+          {isRefining ? (
+            <div className="flex items-center justify-center h-[260px] bg-muted/20 rounded-lg">
+              <div className="bg-muted rounded-full px-3 py-2 flex items-center gap-1.5 text-muted-foreground text-xs">
+                <span className="typing-dot" />
+                <span className="typing-dot" />
+                <span className="typing-dot" />
+                <span className="ml-1">Refining chart…</span>
+              </div>
+            </div>
+          ) : (
+            <ChartRenderer
+              figure={currentFigure ?? msg.chart.figure}
+              columns={columns}
+              rows={rows}
+              height={260}
+              showToolbar={false}
+            />
+          )}
+
+          {/* Refine input row */}
+          {refineOpen && (
+            <div className="mt-2 flex items-center gap-1.5">
+              <input
+                ref={refineInputRef}
+                type="text"
+                value={refineInput}
+                onChange={(e) => setRefineInput(e.target.value)}
+                onKeyDown={handleRefineKeyDown}
+                placeholder="e.g. make it a line chart, sort descending…"
+                disabled={isRefining}
+                className="flex-1 text-xs rounded-lg border border-input bg-background px-3 py-1.5 placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+              />
+              <button
+                onClick={handleRefine}
+                disabled={!refineInput.trim() || isRefining}
+                className="h-7 w-7 flex items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 shrink-0 text-xs"
+                title="Apply refinement"
+              >
+                →
+              </button>
+            </div>
+          )}
+
+          {refineError && (
+            <p className="mt-1 text-xs text-destructive">{refineError}</p>
+          )}
+
+          <div className="mt-2 flex items-center justify-end gap-2">
             <button
-              onClick={() => onPin(msg)}
+              onClick={() => { setRefineOpen((v) => !v); setRefineError(''); }}
+              className="text-xs px-3 py-1.5 rounded-full border font-medium flex items-center gap-1 transition-colors bg-muted/40 hover:bg-muted text-muted-foreground border-border"
+              title="Refine this chart"
+            >
+              ✏️ Refine
+            </button>
+            <button
+              onClick={() => onPin(pinnedFigureRef as Message)}
               className={`text-xs px-3 py-1.5 rounded-full border font-medium flex items-center gap-1 transition-colors ${
                 isPinned
                   ? 'bg-green-50 text-green-700 border-green-200'

@@ -39,3 +39,12 @@ class PinOut(BaseModel):
 
 class HealthOut(BaseModel):
     status: str = "ok"
+
+
+class RefineRequest(BaseModel):
+    session_id: str
+    original_question: str | None = None
+    sql_query: str | None = None
+    chart_config: dict[str, Any]
+    refine_instruction: str
+    columns: list[dict] | None = None

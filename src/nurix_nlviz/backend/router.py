@@ -6,10 +6,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from .._metadata import api_prefix
-from .agent import run_chat_agent
+from .agent import run_chat_agent, _get_token
+from .chart_router import refine_chart
 from .config import AppConfig
 from .logger import logger
-from .models import ChatRequest, HealthOut, PinIn, PinOut
+from .models import ChatRequest, HealthOut, PinIn, PinOut, RefineRequest
 from . import db as db_module
 
 
@@ -58,6 +59,24 @@ async def chat(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@api.post("/refine", operation_id="refineChart")
+async def refine_chart_endpoint(body: RefineRequest, config: ConfigDep):
+    """Apply a natural-language refinement instruction to an existing chart."""
+    try:
+        token = await _get_token(config)
+        updated_figure = await refine_chart(
+            figure=body.chart_config,
+            columns=body.columns or [],
+            refine_instruction=body.refine_instruction,
+            config=config,
+            token=token,
+        )
+        return {"chart_config": updated_figure}
+    except Exception as exc:
+        logger.error(f"Error refining chart: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @api.get("/pins", response_model=list[PinOut], operation_id="getPins")

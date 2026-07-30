@@ -296,3 +296,63 @@ processed_at (timestamp)
         chart_type = pick_chart_type(columns)
 
     return build_figure(chart_type, columns, rows or [])
+
+
+async def refine_chart(figure: dict, columns: list, refine_instruction: str, config, token: str) -> dict:
+    """Apply a natural-language refinement instruction to an existing Plotly figure."""
+    try:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(
+            base_url=config.ai_gateway_base_url,
+            api_key=token,
+        )
+
+        system = (
+            "You are a data visualization expert. Given a Plotly figure JSON and a refinement "
+            "instruction, return an updated Plotly figure JSON that applies the instruction. "
+            "Return ONLY valid JSON for the figure dict with `data` and `layout` keys. "
+            "No explanation, no markdown fences."
+        )
+
+        col_desc = ", ".join(f"{c['name']} ({c.get('type', 'unknown')})" for c in columns) if columns else "unknown"
+        user_msg = (
+            f"Current figure JSON:\n{json.dumps(figure)}\n\n"
+            f"Column metadata: {col_desc}\n\n"
+            f"Refinement instruction: {refine_instruction}\n\n"
+            "Return the updated Plotly figure JSON."
+        )
+
+        response = await client.chat.completions.create(
+            model=config.claude_model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=4096,
+            temperature=0,
+        )
+
+        raw = response.choices[0].message.content or ""
+        # Handle content-block list shape from Claude
+        if isinstance(raw, list):
+            raw = " ".join(
+                block.get("text", "") if isinstance(block, dict) else str(block)
+                for block in raw
+            )
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.rstrip("`").strip()
+
+        updated = json.loads(raw)
+        if not isinstance(updated, dict) or "data" not in updated:
+            return figure
+        return updated
+
+    except Exception as exc:
+        from .logger import logger
+        logger.warning(f"Chart refinement failed: {exc}")
+        return figure
