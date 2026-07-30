@@ -215,6 +215,14 @@ function DraggableCard({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
 
+  const cleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      cleanupRef.current?.();
+    };
+  }, []);
+
   const startDrag = (e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
@@ -230,7 +238,12 @@ function DraggableCard({
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
+      cleanupRef.current = null;
       onLayoutCommit(layoutRef.current);
+    };
+    cleanupRef.current = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -252,7 +265,12 @@ function DraggableCard({
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
+      cleanupRef.current = null;
       onLayoutCommit(layoutRef.current);
+    };
+    cleanupRef.current = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);

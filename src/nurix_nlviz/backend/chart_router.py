@@ -197,6 +197,86 @@ def build_figure(chart_type: str, columns: list[dict], rows: list[list]) -> dict
     return fig.to_dict()
 
 
+async def generate_html_report(
+    question: str,
+    columns: list[dict],
+    rows: list[list],
+    client,
+) -> str:
+    """Ask Claude to generate a self-contained HTML visualization report."""
+    col_names = [c["name"] if isinstance(c, dict) else c for c in columns]
+    data_rows = rows[:200]
+
+    data_str = ", ".join(col_names) + "\n"
+    for row in data_rows[:50]:
+        data_str += ", ".join(str(v) for v in row) + "\n"
+    if len(data_rows) > 50:
+        data_str += f"... ({len(data_rows) - 50} more rows)"
+
+    system_prompt = """You are a data visualization expert. Generate a complete, self-contained HTML report that visualizes the given data.
+
+Rules:
+- Output ONLY valid HTML starting with <!DOCTYPE html> — no markdown, no code fences, no explanation
+- Use Chart.js 4 from CDN (https://cdn.jsdelivr.net/npm/chart.js@4) for charts
+- Include ONLY a concise heading (h2) matching the user's question. NO narrative text, NO analysis paragraphs, NO bullet points. Just the heading and the chart.
+- Use Databricks brand colors: primary red #FF3621, dark green #00A972, dark blue #1B3139, orange #FF8C00
+- Background: white (#FFFFFF), text: #1B3139
+- Font: system-ui, sans-serif
+- Make it responsive (max-width: 800px, margin: auto)
+- Add padding: 24px
+- The chart should be clear and labeled
+- If data has a time dimension, prefer a line chart
+- If categorical with counts/sums, prefer a bar chart
+- If parts of a whole (small N), use a doughnut chart
+- Always include a title matching the user's question"""
+
+    user_prompt = f"""Question: {question}
+
+Data ({len(data_rows)} rows):
+{data_str}
+
+Generate a self-contained HTML visualization for this data."""
+
+    response = await client.chat.completions.create(
+        model="databricks-claude-sonnet-5",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+    )
+
+    content = response.choices[0].message.content
+    if isinstance(content, list):
+        html = "".join(
+            block.get("text", "") if isinstance(block, dict) else str(block)
+            for block in content
+        ).strip()
+    else:
+        html = (content or "").strip()
+    if html.startswith("```"):
+        html = html.split("\n", 1)[1]
+    if html.endswith("```"):
+        html = html.rsplit("```", 1)[0]
+    html = html.strip()
+
+    # Block all outbound network requests from the sandboxed iframe.
+    # Chart.js is loaded from CDN by Claude; connect-src 'none' prevents
+    # any fetch/XHR calls to external hosts.
+    csp_meta = (
+        "<meta http-equiv=\"Content-Security-Policy\" content=\""
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "script-src 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+        "connect-src 'none';\">"
+    )
+    if "<head>" in html:
+        html = html.replace("<head>", f"<head>\n  {csp_meta}", 1)
+    else:
+        html = csp_meta + html
+
+    return html
+
+
 async def pick_chart_type_with_llm(
     columns: list[dict],
     sql: str,

@@ -197,7 +197,7 @@ def insert_pin(
                     INSERT INTO pinned_charts
                     (session_id, question, sql_query, chart_type, chart_config, rows_json, x, y, width, height)
                     VALUES (:session_id, :question, :sql_query, :chart_type,
-                            :chart_config::jsonb, :rows_json::jsonb, :x, :y, :width, :height)
+                            CAST(:chart_config AS jsonb), CAST(:rows_json AS jsonb), :x, :y, :width, :height)
                     RETURNING id
                 """),
                 {
@@ -325,7 +325,7 @@ def update_pin_layout(
         if height is not None:
             sets.append("height = :height"); params["height"] = height
         if chart_config is not None:
-            sets.append("chart_config = :chart_config::jsonb")
+            sets.append("chart_config = CAST(:chart_config AS jsonb)")
             params["chart_config"] = json.dumps(chart_config)
         if not sets:
             return None
