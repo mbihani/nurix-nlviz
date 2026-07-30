@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Trash2, Pin, Expand, X } from 'lucide-react';
-import Plot from 'react-plotly.js';
-import { ChartEditor } from './ChartEditor';
-import { CHART_COLORS } from '../config/branding';
+import { ChartRenderer } from './ChartRenderer';
 
 interface PlotlyFigure {
   data: any[];
@@ -25,11 +23,17 @@ interface PinnedChartsProps {
   refreshTrigger?: number;
 }
 
+const TYPE_BADGE: Record<string, string> = {
+  bar: 'bg-blue-50 text-blue-700',
+  line: 'bg-green-50 text-green-700',
+  pie: 'bg-amber-50 text-amber-700',
+  scatter: 'bg-purple-50 text-purple-700',
+};
+
 export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
   const [pins, setPins] = useState<PinnedChart[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<PinnedChart | null>(null);
-  const [editing, setEditing] = useState<PinnedChart | null>(null);
 
   const loadPins = useCallback(async () => {
     setLoading(true);
@@ -60,23 +64,6 @@ export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
     }
   };
 
-  const handleSaveEdit = async (pin: PinnedChart, updatedFigure: PlotlyFigure) => {
-    try {
-      const res = await fetch(`/api/pins/${pin.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chart_config: updatedFigure }),
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setPins((prev) => prev.map((p) => (p.id === pin.id ? updated : p)));
-        if (expanded?.id === pin.id) setExpanded(updated);
-      }
-    } catch {
-      // ignore patch errors
-    }
-  };
-
   if (loading && pins.length === 0) {
     return (
       <div className="text-sm text-muted-foreground text-center py-4">Loading pinned charts…</div>
@@ -85,9 +72,11 @@ export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
 
   if (pins.length === 0) {
     return (
-      <div className="text-sm text-muted-foreground text-center py-6 px-4">
-        <Pin className="mx-auto mb-2 opacity-30" size={24} />
-        No pinned charts yet. Pin a chart from the visualization panel.
+      <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+        <Pin className="mb-3 opacity-30" size={32} />
+        <p className="text-sm text-muted-foreground">
+          No pinned charts yet. Pin a chart from the chat.
+        </p>
       </div>
     );
   }
@@ -100,78 +89,63 @@ export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-3 p-3">
-        {pins.map((pin) => {
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
+        {pins.map((pin, idx) => {
           const figure = getFigure(pin);
+          const badgeClass = TYPE_BADGE[pin.chart_type] ?? 'bg-gray-100 text-gray-600';
           return (
             <div
               key={pin.id}
-              className="border rounded-lg bg-card p-3 hover:shadow-sm transition-shadow"
+              className="group relative border rounded-lg bg-card hover:shadow-md transition-shadow animate-fade-in-up"
+              style={{ animationDelay: `${idx * 60}ms` }}
             >
-              <div className="flex items-start justify-between mb-2 gap-2">
-                <p className="text-xs font-medium text-foreground line-clamp-2 flex-1">
-                  {pin.question}
-                </p>
-                <div className="flex gap-1 shrink-0">
-                  <button
-                    onClick={() => setExpanded(pin)}
-                    className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
-                    title="Expand"
-                  >
-                    <Expand size={13} />
-                  </button>
-                  <button
-                    onClick={() => setEditing(pin)}
-                    className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground text-xs"
-                    title="Edit chart"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    onClick={() => handleDelete(pin.id)}
-                    className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                    title="Delete"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
+              {/* Hover action buttons */}
+              <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                <button
+                  onClick={() => setExpanded(pin)}
+                  className="p-1.5 rounded bg-background/80 backdrop-blur-sm border hover:bg-accent text-muted-foreground hover:text-foreground shadow-sm"
+                  title="Expand"
+                >
+                  <Expand size={13} />
+                </button>
+                <button
+                  onClick={() => handleDelete(pin.id)}
+                  className="p-1.5 rounded bg-background/80 backdrop-blur-sm border hover:bg-destructive/10 text-muted-foreground hover:text-destructive shadow-sm"
+                  title="Delete"
+                >
+                  <Trash2 size={13} />
+                </button>
               </div>
 
-              {figure.data.length > 0 ? (
-                <div className="pointer-events-none">
-                  <Plot
-                    data={figure.data}
-                    layout={{
-                      ...figure.layout,
-                      paper_bgcolor: 'transparent',
-                      plot_bgcolor: 'transparent',
-                      autosize: true,
-                      height: 140,
-                      margin: { t: 20, b: 30, l: 40, r: 10 },
-                    }}
-                    config={{ displayModeBar: false, responsive: true }}
-                    style={{ width: '100%' }}
-                    useResizeHandler
-                  />
-                </div>
-              ) : (
-                <div className="h-24 flex items-center justify-center text-xs text-muted-foreground bg-muted/30 rounded">
-                  {pin.chart_type.toUpperCase()} chart
-                </div>
-              )}
+              <div className="p-3">
+                <p className="text-sm font-medium text-foreground line-clamp-3 mb-2 pr-16">
+                  {pin.question}
+                </p>
 
-              <div className="mt-1 flex items-center justify-between">
-                <span
-                  className="text-xs px-1.5 py-0.5 rounded text-white capitalize"
-                  style={{ backgroundColor: CHART_COLORS[1] }}
-                >
-                  {pin.chart_type}
-                </span>
-                {pin.created_at && (
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(pin.created_at).toLocaleDateString()}
-                  </span>
+                {figure.data.length > 0 ? (
+                  <div className="pointer-events-none">
+                    <ChartRenderer
+                      figure={figure}
+                      height={200}
+                      showToolbar={false}
+                    />
+                  </div>
+                ) : (
+                  <div className="h-[200px] flex items-center justify-center text-xs text-muted-foreground bg-muted/30 rounded">
+                    {pin.chart_type.toUpperCase()} chart
+                  </div>
                 )}
+
+                <div className="mt-2 flex items-center justify-between">
+                  <span className={`text-xs px-1.5 py-0.5 rounded capitalize font-medium ${badgeClass}`}>
+                    {pin.chart_type}
+                  </span>
+                  {pin.created_at && (
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(pin.created_at).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -181,11 +155,11 @@ export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
       {/* Expand modal */}
       {expanded && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-black/60 p-4"
           onClick={() => setExpanded(null)}
         >
           <div
-            className="bg-card rounded-xl shadow-2xl w-full max-w-2xl p-6"
+            className="bg-card rounded-xl shadow-2xl w-full max-w-3xl p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-4">
@@ -201,19 +175,7 @@ export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
             {(() => {
               const fig = getFigure(expanded);
               return fig.data.length > 0 ? (
-                <Plot
-                  data={fig.data}
-                  layout={{
-                    ...fig.layout,
-                    paper_bgcolor: 'transparent',
-                    plot_bgcolor: 'transparent',
-                    autosize: true,
-                    height: 320,
-                  }}
-                  config={{ displayModeBar: true, responsive: true }}
-                  style={{ width: '100%' }}
-                  useResizeHandler
-                />
+                <ChartRenderer figure={fig} height={400} showToolbar={true} />
               ) : (
                 <div className="h-48 flex items-center justify-center text-muted-foreground">
                   No chart data
@@ -233,19 +195,6 @@ export function PinnedCharts({ sessionId, refreshTrigger }: PinnedChartsProps) {
             )}
           </div>
         </div>
-      )}
-
-      {/* Edit modal */}
-      {editing && (
-        <ChartEditor
-          figure={getFigure(editing)}
-          columns={[]}
-          rows={[]}
-          onUpdate={(updatedFigure) => {
-            handleSaveEdit(editing, updatedFigure);
-          }}
-          onClose={() => setEditing(null)}
-        />
       )}
     </>
   );
