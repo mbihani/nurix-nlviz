@@ -158,7 +158,7 @@ function App() {
       </header>
 
       {/* Full-width canvas */}
-      <div className="flex-1 overflow-auto relative">
+      <div className={`flex-1 overflow-auto relative ${chatOpen ? 'pointer-events-none' : ''}`}>
         <PinnedCharts sessionId={sessionId} refreshTrigger={pinRefresh} />
       </div>
 
