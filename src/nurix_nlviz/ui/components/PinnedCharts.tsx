@@ -194,7 +194,7 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides 
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold" style={{ color: '#F8FAFC' }}>Refine chart</h3>
-              <button onClick={() => { setRefiningPin(null); setRefineError(''); }}
+              <button type="button" onClick={() => { setRefiningPin(null); setRefineError(''); }}
                 style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '6px', color: '#64748B', cursor: 'pointer', padding: '4px' }}><X size={16} /></button>
             </div>
             {isRefining ? (
@@ -214,7 +214,7 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides 
                   style={{ background: '#1A1A2A', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '8px', color: '#F8FAFC', fontSize: '13px', padding: '8px 12px', outline: 'none', flex: 1 }}
                   autoFocus
                 />
-                <button onClick={handleRefinePin} disabled={!refineInput.trim() || isRefining}
+                <button type="button" onClick={handleRefinePin} disabled={!refineInput.trim() || isRefining}
                   className="disabled:opacity-40 shrink-0"
                   style={{ background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 14px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>
                   Apply
@@ -241,6 +241,7 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides 
             <div className="flex items-start justify-between mb-4">
               <h3 className="text-sm font-semibold pr-4" style={{ color: '#F8FAFC' }}>{expanded.question}</h3>
               <button
+                type="button"
                 onClick={() => setExpanded(null)}
                 style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '6px', color: '#64748B', cursor: 'pointer', padding: '4px' }}
               >
@@ -409,15 +410,16 @@ function DraggableCard({
           {pin.question}
         </p>
         <div className="flex gap-1 shrink-0" onMouseDown={(e) => e.stopPropagation()}>
-          <button onClick={onExpand} style={actionBtnStyle} title="Expand">
+          <button type="button" onClick={onExpand} style={actionBtnStyle} title="Expand">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
             </svg>
           </button>
-          <button onClick={() => onRefine(pin.id, pin.chart_config)} style={actionBtnStyle} title="Refine chart">
+          <button type="button" onClick={() => onRefine(pin.id, pin.chart_config)} style={actionBtnStyle} title="Refine chart">
             <Pencil size={11} />
           </button>
           <button
+            type="button"
             onClick={onDelete}
             style={{ ...actionBtnStyle, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#EF4444' }}
             title="Delete"

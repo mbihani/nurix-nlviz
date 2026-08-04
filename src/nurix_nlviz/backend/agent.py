@@ -34,7 +34,7 @@ async def _get_token(config: AppConfig) -> str:
     """Refresh SP token via Databricks SDK — works both locally and in deployed app."""
     try:
         from databricks.sdk import WorkspaceClient
-        ws = WorkspaceClient()
+        ws = WorkspaceClient(host=config.databricks_host)
         auth = ws.config.authenticate()
         token = auth.get("Authorization", "").replace("Bearer ", "")
         if not token:
@@ -305,8 +305,8 @@ async def run_chat_agent_via_external(
     config: AppConfig,
 ) -> AsyncIterator[str]:
     """Proxy chat to nurix-agent, forwarding SSE events."""
-    token = await _get_token(config)
     try:
+        token = await _get_token(config)
         async with httpx.AsyncClient(timeout=120) as client:
             async with client.stream(
                 "POST",
@@ -319,15 +319,24 @@ async def run_chat_agent_via_external(
                 },
             ) as response:
                 response.raise_for_status()
+                upstream_sent_done = False
                 async for line in response.aiter_lines():
                     if line.startswith("data: "):
                         yield line + "\n\n"
+                        try:
+                            ev = json.loads(line[6:])
+                            if ev.get("type") in ("done", "error", "rejected"):
+                                upstream_sent_done = True
+                        except Exception:
+                            pass
                     elif line.startswith(": ping"):
                         continue  # skip keepalives
+                if not upstream_sent_done:
+                    yield _make_event({"type": "done"})
     except Exception as exc:
         logger.error(f"nurix-agent chat proxy error: {exc}\n{traceback.format_exc()}")
         yield _make_event({"type": "error", "message": str(exc)})
-    yield _make_event({"type": "done"})
+        yield _make_event({"type": "done"})
 
 
 async def run_refine_via_external(
@@ -337,10 +346,10 @@ async def run_refine_via_external(
     config: AppConfig,
 ) -> str:
     """Proxy refine to nurix-agent."""
-    token = await _get_token(config)
     # Collect SSE stream and return final chart html
     chart_html_result = chart_html  # fallback
     try:
+        token = await _get_token(config)
         async with httpx.AsyncClient(timeout=60) as client:
             async with client.stream(
                 "POST",

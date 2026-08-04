@@ -73,12 +73,19 @@ function App() {
 
   const handlePinChart = useCallback((msg: Message) => {
     if (!msg.chart) return;
+    // Use msg.id as the key to prevent double-pinning
+    if (pinnedMsgIds.has(msg.id)) return;
     doPinChart(msg.chart.html, msg.sql, msg.content || msg.chart.title || 'Chart');
-  }, [doPinChart]);
+    setPinnedMsgIds(prev => new Set([...prev, msg.id]));
+  }, [doPinChart, pinnedMsgIds]);
 
-  const handlePinChartEvent = useCallback((msg: Message, event: ChartEvent, _idx: number) => {
+  const handlePinChartEvent = useCallback((msg: Message, event: ChartEvent, idx: number) => {
+    // Compose a per-chart key so each chart in a multi-chart message can pin once
+    const key = `${msg.id}:${idx}`;
+    if (pinnedMsgIds.has(key)) return;
     doPinChart(event.html, msg.sql, msg.content || event.title || 'Chart');
-  }, [doPinChart]);
+    setPinnedMsgIds(prev => new Set([...prev, key]));
+  }, [doPinChart, pinnedMsgIds]);
 
   const resizing = useRef(false);
   const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
