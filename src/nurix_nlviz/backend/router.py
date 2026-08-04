@@ -6,8 +6,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from .._metadata import api_prefix
-from .agent import run_chat_agent, _get_token
-from .chart_router import generate_chart_html, refine_chart_html
+from .agent import (
+    run_chat_agent_via_external,
+    run_refine_via_external,
+    _get_token,
+)
+from .chart_router import generate_chart_html
 from .config import AppConfig
 from .logger import logger
 from .models import ChatRequest, FilterEntry, FilterRequest, HealthOut, PinIn, PinOut, RefineRequest
@@ -44,7 +48,7 @@ async def chat(
     """SSE stream for NL-to-Viz chat. Streams typed events."""
 
     async def event_generator():
-        async for chunk in run_chat_agent(
+        async for chunk in run_chat_agent_via_external(
             question=body.question,
             session_id=body.session_id,
             config=config,
@@ -63,17 +67,17 @@ async def chat(
 
 @api.post("/refine", operation_id="refineChart")
 async def refine_chart_endpoint(body: RefineRequest, config: ConfigDep):
-    """Apply a natural-language refinement instruction to an existing chart."""
+    """Apply a natural-language refinement instruction to an existing chart via nurix-agent."""
     try:
-        token = await _get_token(config)
-        chart_html = await refine_chart_html(
-            current_html=body.chart_html,
-            refine_instruction=body.refine_instruction,
-            columns=body.columns or [],
+        new_html = await run_refine_via_external(
+            chart_html=body.chart_html,
+            instruction=body.refine_instruction,
+            session_id=body.session_id,
             config=config,
-            token=token,
         )
-        return {"chart_html": chart_html}
+        # Return both keys: `chart_html` (consumed by the frontend refine handlers)
+        # and `html` (matches the nurix-agent event shape).
+        return {"chart_html": new_html, "html": new_html}
     except Exception as exc:
         logger.error(f"Error refining chart: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))

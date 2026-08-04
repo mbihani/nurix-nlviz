@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Trash2, Pin, X, Pencil } from 'lucide-react';
+import { Trash2, X, Pencil } from 'lucide-react';
 import { ChartRenderer } from './ChartRenderer';
 
 interface PinnedChart {
@@ -146,18 +146,13 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides 
 
   if (loading && pins.length === 0) {
     return (
-      <div className="text-sm text-muted-foreground text-center py-4">Loading pinned charts…</div>
+      <div className="text-sm text-center py-4" style={{ color: '#64748B' }}>Loading pinned charts…</div>
     );
   }
 
+  // Empty state is owned by the parent canvas (index.tsx) — render nothing here.
   if (pins.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-sm text-muted-foreground py-16 px-4">
-        <Pin className="mb-2 opacity-30" size={32} />
-        <p>No pinned charts yet.</p>
-        <p className="text-xs mt-1 opacity-70">Ask Genie a question and pin a chart to see it here.</p>
-      </div>
-    );
+    return null;
   }
 
   const canvasMinH = Math.max(
@@ -169,12 +164,7 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides 
     <>
       <div
         className="relative w-full"
-        style={{
-          minHeight: `max(80vh, ${canvasMinH}px)`,
-          backgroundImage:
-            'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'20\' height=\'20\'%3E%3Cpath d=\'M 20 0 L 0 0 0 20\' fill=\'none\' stroke=\'%23e5e7eb\' stroke-width=\'0.5\'/%3E%3C/svg%3E")',
-          backgroundSize: '20px 20px',
-        }}
+        style={{ minHeight: `max(80vh, ${canvasMinH}px)` }}
       >
         {pins.map((pin, idx) => {
           const overrideHtml = externalHtmlOverrides?.get(pin.id);
@@ -196,17 +186,19 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides 
 
       {/* Refine modal */}
       {refiningPin && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)' }}
           onClick={() => { setRefiningPin(null); setRefineError(''); }}>
-          <div className="bg-card rounded-xl shadow-2xl w-full max-w-md p-5"
+          <div className="w-full max-w-md p-5"
+            style={{ background: '#13131F', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '16px', boxShadow: '0 0 60px rgba(99,102,241,0.2)' }}
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-foreground">Refine chart</h3>
+              <h3 className="text-sm font-semibold" style={{ color: '#F8FAFC' }}>Refine chart</h3>
               <button onClick={() => { setRefiningPin(null); setRefineError(''); }}
-                className="p-1 rounded hover:bg-accent text-muted-foreground"><X size={16} /></button>
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '6px', color: '#64748B', cursor: 'pointer', padding: '4px' }}><X size={16} /></button>
             </div>
             {isRefining ? (
-              <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 py-4 text-sm" style={{ color: '#94A3B8' }}>
                 <span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" />
                 <span className="ml-1">Refining chart…</span>
               </div>
@@ -219,16 +211,17 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides 
                   onChange={(e) => setRefineInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleRefinePin(); if (e.key === 'Escape') { setRefiningPin(null); setRefineError(''); } }}
                   placeholder="e.g. make it a line chart, sort descending…"
-                  className="flex-1 text-sm rounded-lg border border-input bg-background px-3 py-2 placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  style={{ background: '#1A1A2A', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '8px', color: '#F8FAFC', fontSize: '13px', padding: '8px 12px', outline: 'none', flex: 1 }}
                   autoFocus
                 />
                 <button onClick={handleRefinePin} disabled={!refineInput.trim() || isRefining}
-                  className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-40 shrink-0">
+                  className="disabled:opacity-40 shrink-0"
+                  style={{ background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 14px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>
                   Apply
                 </button>
               </div>
             )}
-            {refineError && <p className="mt-2 text-xs text-destructive">{refineError}</p>}
+            {refineError && <p className="mt-2 text-xs" style={{ color: '#EF4444' }}>{refineError}</p>}
           </div>
         </div>
       )}
@@ -236,18 +229,20 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides 
       {/* Expand modal */}
       {expanded && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-[100] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)' }}
           onClick={() => setExpanded(null)}
         >
           <div
-            className="bg-card rounded-xl shadow-2xl w-full max-w-3xl p-6"
+            className="p-6"
+            style={{ background: '#13131F', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '16px', boxShadow: '0 0 60px rgba(99,102,241,0.2)', width: '90vw', maxWidth: '900px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-4">
-              <h3 className="text-sm font-semibold text-foreground pr-4">{expanded.question}</h3>
+              <h3 className="text-sm font-semibold pr-4" style={{ color: '#F8FAFC' }}>{expanded.question}</h3>
               <button
                 onClick={() => setExpanded(null)}
-                className="p-1 rounded hover:bg-accent text-muted-foreground"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '6px', color: '#64748B', cursor: 'pointer', padding: '4px' }}
               >
                 <X size={16} />
               </button>
@@ -256,17 +251,17 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides 
             {expanded.chart_config ? (
               <ChartRenderer html={expanded.chart_config as string} height={420} />
             ) : (
-              <div className="h-48 flex items-center justify-center text-muted-foreground">
+              <div className="h-48 flex items-center justify-center" style={{ color: '#64748B' }}>
                 No chart data
               </div>
             )}
 
             {expanded.sql_query && (
               <details className="mt-4">
-                <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                <summary className="text-xs cursor-pointer" style={{ color: '#64748B' }}>
                   SQL
                 </summary>
-                <pre className="mt-2 text-xs bg-muted p-3 rounded overflow-x-auto">
+                <pre className="mt-2 text-xs overflow-x-auto" style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '6px', color: '#60A5FA', padding: '10px' }}>
                   {expanded.sql_query}
                 </pre>
               </details>
@@ -363,12 +358,24 @@ function DraggableCard({
     document.addEventListener('mouseup', onUp);
   };
 
-  // Allocate chart height = tile height minus header (≈36px)
+  // Allocate chart height = tile height minus header (≈34px)
   const chartHeight = Math.max(MIN_H - 36, layout.height - 48);
+
+  const actionBtnStyle: React.CSSProperties = {
+    background: 'rgba(99,102,241,0.1)',
+    border: '1px solid rgba(99,102,241,0.2)',
+    color: '#818CF8',
+    borderRadius: '4px',
+    padding: '2px 6px',
+    fontSize: '10px',
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+  };
 
   return (
     <div
-      className="border rounded-lg bg-card shadow-sm flex flex-col select-none animate-fade-in-up"
+      className="flex flex-col select-none animate-fade-in-up"
       style={{
         position: 'absolute',
         left: layout.x,
@@ -377,50 +384,55 @@ function DraggableCard({
         height: layout.height,
         minWidth: MIN_W,
         minHeight: MIN_H,
+        background: '#13131F',
+        border: '1px solid rgba(99,102,241,0.18)',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(99,102,241,0.08)',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        transition: 'border-color 0.2s, box-shadow 0.2s',
         animationDelay: `${animationDelay}ms`,
       }}
     >
       {/* Drag handle header */}
       <div
-        className="flex items-center justify-between px-3 py-2 border-b bg-muted/40 rounded-t-lg cursor-grab active:cursor-grabbing shrink-0"
+        className="flex items-center justify-between shrink-0"
+        style={{
+          background: 'linear-gradient(90deg, #0D0D1A 0%, #111128 100%)',
+          borderBottom: '1px solid rgba(99,102,241,0.12)',
+          padding: '7px 10px',
+          cursor: 'grab',
+          height: '34px',
+        }}
         onMouseDown={startDrag}
       >
-        <p className="text-xs font-medium text-foreground line-clamp-1 flex-1 mr-2">
+        <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>
           {pin.question}
         </p>
         <div className="flex gap-1 shrink-0" onMouseDown={(e) => e.stopPropagation()}>
-          <button
-            onClick={onExpand}
-            className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
-            title="Expand"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <button onClick={onExpand} style={actionBtnStyle} title="Expand">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
             </svg>
           </button>
-          <button
-            onClick={() => onRefine(pin.id, pin.chart_config)}
-            className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
-            title="Refine chart"
-          >
-            <Pencil size={13} />
+          <button onClick={() => onRefine(pin.id, pin.chart_config)} style={actionBtnStyle} title="Refine chart">
+            <Pencil size={11} />
           </button>
           <button
             onClick={onDelete}
-            className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+            style={{ ...actionBtnStyle, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#EF4444' }}
             title="Delete"
           >
-            <Trash2 size={13} />
+            <Trash2 size={11} />
           </button>
         </div>
       </div>
 
       {/* Chart content — fills remaining space */}
-      <div className="flex-1 overflow-hidden rounded-b-lg">
+      <div className="flex-1 overflow-hidden">
         {pin.chart_config ? (
           <ChartRenderer html={pin.chart_config as string} height={chartHeight} />
         ) : (
-          <div className="h-full flex items-center justify-center text-xs text-muted-foreground bg-muted/30">
+          <div className="h-full flex items-center justify-center text-xs" style={{ color: '#64748B', background: 'rgba(99,102,241,0.03)' }}>
             {pin.chart_type.toUpperCase()} chart
           </div>
         )}
@@ -436,9 +448,11 @@ function DraggableCard({
           height: 18,
           cursor: 'se-resize',
           zIndex: 10,
+          color: '#6366F1',
+          opacity: 0.5,
         }}
         onMouseDown={startResize}
-        className="flex items-end justify-end pb-1 pr-1 text-muted-foreground/50 hover:text-muted-foreground"
+        className="flex items-end justify-end pb-1 pr-1"
         title="Resize"
       >
         <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">

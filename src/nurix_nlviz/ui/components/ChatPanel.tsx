@@ -3,7 +3,7 @@ import { Send, Square, Database, ChevronDown, ChevronUp } from 'lucide-react';
 import type { Message, ChartEvent } from '../hooks/useGenieChat';
 import { ChartRenderer } from './ChartRenderer';
 
-const SUGGESTED = [
+export const SUGGESTED = [
   'What are the top feature areas by number of negative reviews?',
   'Show me sentiment trends over time for Pro users',
   'Which country has the highest average urgency score?',
@@ -59,15 +59,27 @@ export function ChatPanel({
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {messages.length === 0 && (
           <div className="text-center pt-8">
-            <p className="text-sm text-muted-foreground mb-4">
+            <p className="text-sm mb-4" style={{ color: '#64748B' }}>
               Ask a question about your customer feedback data.
             </p>
             <div className="flex flex-wrap gap-2 justify-center">
               {SUGGESTED.map((s) => (
                 <button
                   key={s}
-                  className="text-xs px-3 py-2 rounded-full border hover:bg-accent hover:border-primary transition-colors"
                   onClick={() => onSend(s)}
+                  style={{
+                    background: 'rgba(99,102,241,0.08)',
+                    border: '1px solid rgba(99,102,241,0.2)',
+                    color: '#818CF8',
+                    borderRadius: '9999px',
+                    padding: '6px 14px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    whiteSpace: 'normal',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(99,102,241,0.16)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(99,102,241,0.08)')}
                 >
                   {s}
                 </button>
@@ -90,23 +102,36 @@ export function ChatPanel({
       </div>
 
       {/* Input bar */}
-      <div className="border-t p-3">
+      <div className="p-3" style={{ borderTop: '1px solid rgba(99,102,241,0.12)' }}>
         <form onSubmit={handleSubmit} className="flex gap-2 items-end">
           <textarea
             ref={textareaRef}
-            className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring min-h-[40px] max-h-[120px]"
+            className="resize-none focus:outline-none min-h-[40px] max-h-[120px]"
+            style={{
+              background: '#13131F',
+              border: '1px solid rgba(99,102,241,0.15)',
+              borderRadius: '12px',
+              color: '#F8FAFC',
+              fontSize: '13px',
+              padding: '10px 14px',
+              outline: 'none',
+              flex: 1,
+            }}
             placeholder="Ask about your data…"
             rows={1}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onFocus={(e) => (e.currentTarget.style.borderColor = 'rgba(99,102,241,0.4)')}
+            onBlur={(e) => (e.currentTarget.style.borderColor = 'rgba(99,102,241,0.15)')}
             disabled={isStreaming}
           />
           {isStreaming ? (
             <button
               type="button"
               onClick={onStop}
-              className="h-10 w-10 flex items-center justify-center rounded-lg bg-destructive text-white hover:bg-destructive/90 shrink-0"
+              className="shrink-0"
+              style={{ background: '#EF4444', color: 'white', border: 'none', borderRadius: '10px', padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               title="Stop"
             >
               <Square size={16} />
@@ -115,7 +140,8 @@ export function ChatPanel({
             <button
               type="submit"
               disabled={!input.trim()}
-              className="h-10 w-10 flex items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 shrink-0"
+              className="shrink-0 disabled:opacity-40"
+              style={{ background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', color: 'white', border: 'none', borderRadius: '10px', padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               title="Send"
             >
               <Send size={16} />
@@ -177,10 +203,16 @@ function MultiChartCard({
   return (
     <div className="flex flex-col gap-1">
       {isRefining ? (
-        <div className="flex items-center justify-center h-[200px] bg-muted/20 rounded-lg">
-          <div className="bg-muted rounded-full px-3 py-2 flex items-center gap-1.5 text-muted-foreground text-xs">
+        <div
+          className="flex items-center justify-center h-[200px] rounded-lg"
+          style={{ background: 'rgba(99,102,241,0.05)' }}
+        >
+          <div
+            className="rounded-full px-3 py-2 flex items-center gap-1.5 text-xs"
+            style={{ background: '#13131F', color: '#94A3B8' }}
+          >
             <span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" />
-            <span className="ml-1">Refining…</span>
+            <span className="ml-1" style={{ color: '#64748B' }}>Refining…</span>
           </div>
         </div>
       ) : (
@@ -196,21 +228,23 @@ function MultiChartCard({
             onKeyDown={(e) => { if (e.key === 'Enter') handleRefine(); if (e.key === 'Escape') setRefineOpen(false); }}
             placeholder="Refine this chart…"
             disabled={isRefining}
-            className="flex-1 text-xs rounded-lg border border-input bg-background px-3 py-1.5 placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+            className="disabled:opacity-50"
+            style={{ background: '#1A1A2A', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '8px', color: '#F8FAFC', fontSize: '12px', padding: '6px 10px', outline: 'none', flex: 1 }}
           />
           <button onClick={handleRefine} disabled={!refineInput.trim() || isRefining}
-            className="h-7 w-7 flex items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 shrink-0 text-xs">
+            className="shrink-0 disabled:opacity-40"
+            style={{ background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', color: 'white', border: 'none', borderRadius: '8px', padding: '6px 10px', cursor: 'pointer', fontSize: '12px' }}>
             →
           </button>
         </div>
       )}
       <div className="flex items-center justify-end gap-1.5">
         <button type="button" onClick={() => setRefineOpen((v) => !v)}
-          className="text-xs px-2 py-1 rounded-full border font-medium flex items-center gap-1 transition-colors bg-muted/40 hover:bg-muted text-muted-foreground border-border">
+          style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', color: '#818CF8', borderRadius: '6px', fontSize: '11px', padding: '3px 8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
           ✏️ Refine
         </button>
         <button type="button" onClick={onPin}
-          className="text-xs px-2 py-1 rounded-full border font-medium flex items-center gap-1 transition-colors bg-primary/10 hover:bg-primary/20 text-primary border-primary/20">
+          style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', color: '#818CF8', borderRadius: '6px', fontSize: '11px', padding: '3px 8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
           📌 Pin
         </button>
       </div>
@@ -296,7 +330,9 @@ function MessageBubble({
   if (msg.role === 'user') {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2 text-sm shadow-sm">
+        <div
+          style={{ background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', color: 'white', borderRadius: '16px 16px 4px 16px', padding: '10px 14px', fontSize: '13px', maxWidth: '85%', marginLeft: 'auto', wordBreak: 'break-word' }}
+        >
           {msg.content}
         </div>
       </div>
@@ -310,15 +346,25 @@ function MessageBubble({
 
   return (
     <div className="flex flex-col gap-2">
-      {/* Thinking indicator */}
+      {/* Thinking indicator — indigo dots */}
       {msg.isLoading && (
         <div className="flex items-center gap-2">
-          <div className="bg-muted rounded-full px-3 py-2 flex items-center gap-1.5 text-muted-foreground text-xs">
+          <div
+            className="rounded-full px-3 py-2 flex items-center gap-1.5 text-xs"
+            style={{ background: '#13131F', border: '1px solid rgba(99,102,241,0.15)', color: '#94A3B8' }}
+          >
             <span className="typing-dot" />
             <span className="typing-dot" />
             <span className="typing-dot" />
-            {msg.thinking && <span className="ml-1">{msg.thinking}</span>}
+            {msg.thinking && <span className="ml-1" style={{ color: '#64748B' }}>{msg.thinking}</span>}
           </div>
+        </div>
+      )}
+
+      {/* Genie narrative text — subtle assistant note above the chart */}
+      {msg.genie_text && (
+        <div style={{ borderLeft: '2px solid #6366F1', paddingLeft: '10px', marginBottom: '8px', color: '#94A3B8', fontSize: '12px', fontStyle: 'italic', background: 'rgba(99,102,241,0.05)', padding: '7px 10px', borderRadius: '0 6px 6px 0' }}>
+          {msg.genie_text}
         </div>
       )}
 
@@ -326,15 +372,25 @@ function MessageBubble({
       {msg.sql && (
         <div className="text-xs">
           <button
-            className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
+            className="flex items-center gap-1 transition-colors"
+            style={{ color: '#64748B' }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#94A3B8')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = '#64748B')}
             onClick={() => setSqlOpen(!sqlOpen)}
           >
             <Database size={11} />
-            <span className="bg-muted/60 rounded-md px-2 py-1 font-mono text-[11px]">SQL</span>
+            <span
+              style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '11px', color: '#60A5FA', padding: '2px 8px' }}
+            >
+              SQL
+            </span>
             {sqlOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
           </button>
           {sqlOpen && (
-            <pre className="mt-1 bg-muted p-2 rounded text-xs overflow-x-auto max-h-48">
+            <pre
+              className="mt-1 overflow-x-auto max-h-48"
+              style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '11px', color: '#60A5FA', padding: '6px 10px' }}
+            >
               {msg.sql}
             </pre>
           )}
@@ -359,12 +415,18 @@ function MessageBubble({
       {msg.chart && (
         <div>
           {isRefining ? (
-            <div className="flex items-center justify-center h-[260px] bg-muted/20 rounded-lg">
-              <div className="bg-muted rounded-full px-3 py-2 flex items-center gap-1.5 text-muted-foreground text-xs">
+            <div
+              className="flex items-center justify-center h-[260px] rounded-lg"
+              style={{ background: 'rgba(99,102,241,0.05)' }}
+            >
+              <div
+                className="rounded-full px-3 py-2 flex items-center gap-1.5 text-xs"
+                style={{ background: '#13131F', border: '1px solid rgba(99,102,241,0.15)', color: '#94A3B8' }}
+              >
                 <span className="typing-dot" />
                 <span className="typing-dot" />
                 <span className="typing-dot" />
-                <span className="ml-1">Refining chart…</span>
+                <span className="ml-1" style={{ color: '#64748B' }}>Refining chart…</span>
               </div>
             </div>
           ) : (
@@ -385,12 +447,14 @@ function MessageBubble({
                 onKeyDown={handleRefineKeyDown}
                 placeholder="e.g. make it a line chart, sort descending…"
                 disabled={isRefining}
-                className="flex-1 text-xs rounded-lg border border-input bg-background px-3 py-1.5 placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+                className="disabled:opacity-50"
+                style={{ background: '#1A1A2A', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '8px', color: '#F8FAFC', fontSize: '12px', padding: '6px 10px', outline: 'none', flex: 1 }}
               />
               <button
                 onClick={handleRefine}
                 disabled={!refineInput.trim() || isRefining}
-                className="h-7 w-7 flex items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 shrink-0 text-xs"
+                className="shrink-0 disabled:opacity-40"
+                style={{ background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', color: 'white', border: 'none', borderRadius: '8px', padding: '6px 10px', cursor: 'pointer', fontSize: '12px' }}
                 title="Apply refinement"
               >
                 →
@@ -399,14 +463,14 @@ function MessageBubble({
           )}
 
           {refineError && (
-            <p className="mt-1 text-xs text-destructive">{refineError}</p>
+            <p className="mt-1 text-xs" style={{ color: '#EF4444' }}>{refineError}</p>
           )}
 
           <div className="mt-2 flex items-center justify-end gap-2 relative" style={{ zIndex: 20, pointerEvents: 'auto' }}>
             <button
               type="button"
               onClick={() => { setRefineOpen((v) => !v); setRefineError(''); }}
-              className="text-xs px-3 py-1.5 rounded-full border font-medium flex items-center gap-1 transition-colors bg-muted/40 hover:bg-muted text-muted-foreground border-border"
+              style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', color: '#818CF8', borderRadius: '6px', fontSize: '11px', padding: '3px 8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
               title="Refine this chart"
             >
               ✏️ Refine
@@ -414,11 +478,11 @@ function MessageBubble({
             <button
               type="button"
               onClick={() => onPin(pinnedMsgRef as Message)}
-              className={`text-xs px-3 py-1.5 rounded-full border font-medium flex items-center gap-1 transition-colors ${
+              style={
                 isPinned
-                  ? 'bg-green-50 text-green-700 border-green-200'
-                  : 'bg-primary/10 hover:bg-primary/20 text-primary border-primary/20'
-              }`}
+                  ? { background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.25)', color: '#22C55E', borderRadius: '6px', fontSize: '11px', padding: '3px 8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }
+                  : { background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', color: '#818CF8', borderRadius: '6px', fontSize: '11px', padding: '3px 8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }
+              }
               title="Pin this chart"
             >
               📌 {isPinned ? 'Pinned' : 'Pin this chart'}
@@ -429,7 +493,9 @@ function MessageBubble({
 
       {/* Text answer — suppress generic filler when a chart is present */}
       {msg.content && !msg.isLoading && !msg.chart && !(msg.charts && msg.charts.length > 0) && (
-        <div className="text-sm text-foreground bg-muted/40 rounded-2xl rounded-tl-sm px-4 py-2 max-w-[90%]">
+        <div
+          style={{ background: '#13131F', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '4px 16px 16px 16px', padding: '10px 14px', fontSize: '13px', color: '#F8FAFC', maxWidth: '95%' }}
+        >
           {msg.content}
         </div>
       )}

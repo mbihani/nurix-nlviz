@@ -12,10 +12,12 @@ export type ChartEvent = {
 
 export type SSEEvent =
   | { type: 'thinking'; text: string }
+  | { type: 'genie_text'; text: string; index?: number }
   | { type: 'sql'; sql: string }
   | { type: 'rows'; columns: { name: string; type: string }[]; rows: unknown[][] }
   | ChartEvent
   | { type: 'done' }
+  | { type: 'rejected'; reason: string }
   | { type: 'error'; message: string };
 
 export type Message = {
@@ -23,6 +25,7 @@ export type Message = {
   role: 'user' | 'assistant';
   content: string;
   thinking?: string;
+  genie_text?: string;
   sql?: string;
   chart?: ChartEvent;
   charts?: ChartEvent[];
@@ -141,6 +144,10 @@ function handleSSEEvent(
         case 'thinking':
           return { ...m, thinking: event.text };
 
+        case 'genie_text':
+          // nurix-agent narrative — accumulate as a subtle assistant note above the chart
+          return { ...m, genie_text: (m.genie_text ? m.genie_text + ' ' : '') + event.text };
+
         case 'sql':
           return { ...m, sql: event.sql };
 
@@ -164,6 +171,14 @@ function handleSSEEvent(
 
         case 'done':
           return { ...m, isLoading: false, thinking: undefined };
+
+        case 'rejected':
+          return {
+            ...m,
+            content: event.reason || 'Not relevant to feedback data',
+            isLoading: false,
+            thinking: undefined,
+          };
 
         case 'error':
           return {

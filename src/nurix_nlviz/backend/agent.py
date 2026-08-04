@@ -11,6 +11,7 @@ import json
 import traceback
 from typing import Any, AsyncIterator
 
+import httpx
 import mlflow
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
@@ -296,6 +297,77 @@ async def run_chat_agent(
     agent = GenieVizAgent(config)
     async for chunk in agent.stream(question, session_id):
         yield chunk
+
+
+async def run_chat_agent_via_external(
+    question: str,
+    session_id: str,
+    config: AppConfig,
+) -> AsyncIterator[str]:
+    """Proxy chat to nurix-agent, forwarding SSE events."""
+    token = await _get_token(config)
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            async with client.stream(
+                "POST",
+                f"{config.nurix_agent_url}/chat",
+                json={"question": question, "session_id": session_id},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "text/event-stream",
+                    "Content-Type": "application/json",
+                },
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        yield line + "\n\n"
+                    elif line.startswith(": ping"):
+                        continue  # skip keepalives
+    except Exception as exc:
+        logger.error(f"nurix-agent chat proxy error: {exc}\n{traceback.format_exc()}")
+        yield _make_event({"type": "error", "message": str(exc)})
+    yield _make_event({"type": "done"})
+
+
+async def run_refine_via_external(
+    chart_html: str,
+    instruction: str,
+    session_id: str,
+    config: AppConfig,
+) -> str:
+    """Proxy refine to nurix-agent."""
+    token = await _get_token(config)
+    # Collect SSE stream and return final chart html
+    chart_html_result = chart_html  # fallback
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            async with client.stream(
+                "POST",
+                f"{config.nurix_agent_url}/refine",
+                json={
+                    "chart_html": chart_html,
+                    "instruction": instruction,
+                    "session_id": session_id,
+                },
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "text/event-stream",
+                    "Content-Type": "application/json",
+                },
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        try:
+                            event = json.loads(line[6:])
+                            if event.get("type") == "chart":
+                                chart_html_result = event.get("html", chart_html_result)
+                        except Exception:
+                            pass
+    except Exception as exc:
+        logger.error(f"nurix-agent refine proxy error: {exc}\n{traceback.format_exc()}")
+    return chart_html_result
 
 
 def _extract_text(content) -> str:

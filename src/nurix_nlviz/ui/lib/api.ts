@@ -6,6 +6,19 @@ export interface ChatRequest {
   session_id: string;
 }
 
+export interface FilterEntry {
+  col: string;
+  val: string;
+}
+
+export interface FilterRequest {
+  filter_col?: string;
+  filter_val?: string;
+  filters?: FilterEntry[];
+  pin_ids: number[];
+  session_id: string;
+}
+
 export interface HTTPValidationError {
   detail?: ValidationError[];
 }
@@ -15,7 +28,7 @@ export interface HealthOut {
 }
 
 export interface PinIn {
-  chart_config: Record<string, unknown>;
+  chart_config: string;
   chart_type: string;
   height?: number;
   question: string;
@@ -28,7 +41,7 @@ export interface PinIn {
 }
 
 export interface PinOut {
-  chart_config: Record<string, unknown>;
+  chart_config: string;
   chart_type: string;
   created_at?: string | null;
   height?: number;
@@ -43,7 +56,7 @@ export interface PinOut {
 }
 
 export interface PinUpdateRequest {
-  chart_config?: Record<string, unknown> | null;
+  chart_config?: string | null;
   height?: number | null;
   width?: number | null;
   x?: number | null;
@@ -51,12 +64,10 @@ export interface PinUpdateRequest {
 }
 
 export interface RefineRequest {
-  chart_config: Record<string, unknown>;
+  chart_html: string;
   columns?: Record<string, unknown>[] | null;
-  original_question?: string | null;
   refine_instruction: string;
   session_id: string;
-  sql_query?: string | null;
 }
 
 export interface ValidationError {
@@ -106,6 +117,21 @@ export const chat = async (data: ChatRequest, options?: RequestInit): Promise<{ 
 
 export function useChat(options?: { mutation?: UseMutationOptions<{ data: unknown }, ApiError, ChatRequest> }) {
   return useMutation({ mutationFn: (data) => chat(data), ...options?.mutation });
+}
+
+export const applyFilter = async (data: FilterRequest, options?: RequestInit): Promise<{ data: unknown }> => {
+  const res = await fetch("/api/filter", { ...options, method: "POST", headers: { "Content-Type": "application/json", ...options?.headers }, body: JSON.stringify(data) });
+  if (!res.ok) {
+    const body = await res.text();
+    let parsed: unknown;
+    try { parsed = JSON.parse(body); } catch { parsed = body; }
+    throw new ApiError(res.status, res.statusText, parsed);
+  }
+  return { data: await res.json() };
+};
+
+export function useApplyFilter(options?: { mutation?: UseMutationOptions<{ data: unknown }, ApiError, FilterRequest> }) {
+  return useMutation({ mutationFn: (data) => applyFilter(data), ...options?.mutation });
 }
 
 export const health = async (options?: RequestInit): Promise<{ data: HealthOut }> => {

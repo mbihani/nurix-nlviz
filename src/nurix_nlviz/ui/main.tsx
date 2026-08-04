@@ -8,6 +8,10 @@ import { routeTree } from '@/types/routeTree.gen';
 import { RouterProvider, createRouter } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+// Always dark-themed — lock the dark class on at startup.
+document.documentElement.classList.add('dark');
+document.documentElement.style.backgroundColor = '#0A0A12';
+
 const queryClient = new QueryClient();
 
 const router = createRouter({

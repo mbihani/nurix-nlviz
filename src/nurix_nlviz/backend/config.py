@@ -63,6 +63,10 @@ class AppConfig(BaseSettings):
         default="fevm-stable",
         validation_alias="DATABRICKS_CONFIG_PROFILE",
     )
+    nurix_agent_url: str = Field(
+        default="https://nurix-agent-7474660648944264.aws.databricksapps.com",
+        validation_alias="NURIX_AGENT_URL",
+    )
 
     @property
     def genie_mcp_url(self) -> str:

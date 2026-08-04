@@ -1,11 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Pin, MessageCircle, X, Moon, Sun } from 'lucide-react';
-import { APP_TITLE, APP_SUBTITLE, PRIMARY_COLOR, LOGO_URL } from '../config/branding';
+import { Pin, MessageSquare, X, Sparkles, BarChart3 } from 'lucide-react';
+import { APP_TITLE, APP_SUBTITLE } from '../config/branding';
 import { useGenieChat, type Message, type ChartEvent } from '../hooks/useGenieChat';
 import { ChatPanel } from '../components/ChatPanel';
 import { PinnedCharts } from '../components/PinnedCharts';
-
 
 export const Route = createFileRoute('/')({
   component: App,
@@ -14,16 +13,13 @@ export const Route = createFileRoute('/')({
 function getOrCreateSessionId(): string {
   const key = 'nurix-nlviz-session-id';
   let id = localStorage.getItem(key);
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem(key, id);
-  }
+  if (!id) { id = crypto.randomUUID(); localStorage.setItem(key, id); }
   return id;
 }
 
-const MIN_PANEL_W = 320;
-const MAX_PANEL_W = 640;
-const DEFAULT_PANEL_W = 420;
+const MIN_PANEL_W = 340;
+const MAX_PANEL_W = 660;
+const DEFAULT_PANEL_W = 440;
 
 function App() {
   const sessionId = getOrCreateSessionId();
@@ -33,246 +29,137 @@ function App() {
   const [pinCount, setPinCount] = useState(0);
   const [chatOpen, setChatOpen] = useState(false);
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_W);
-  const [dark, setDark] = useState(false);
   const panelWidthRef = useRef(panelWidth);
   panelWidthRef.current = panelWidth;
-
-  // Track pin IDs for staggered positioning
   const [pinnedDbIds, setPinnedDbIds] = useState<number[]>([]);
-
-  // Badge: count new pins since drawer was last opened
   const [newPinCount, setNewPinCount] = useState(0);
 
-  // Fix 1: Load persisted pins on mount to bootstrap pinCount and pinnedDbIds
   useEffect(() => {
     fetch(`/api/pins?session_id=${encodeURIComponent(sessionId)}`)
-      .then((r) => r.ok ? r.json() : [])
+      .then(r => r.ok ? r.json() : [])
       .then((pins: { id: number }[]) => {
         if (pins.length > 0) {
           setPinCount(pins.length);
-          setPinnedDbIds(pins.map((p) => p.id));
+          setPinnedDbIds(pins.map(p => p.id));
         }
-      })
-      .catch(() => {});
+      }).catch(() => {});
   }, [sessionId]);
 
-  const toggleDark = () => {
-    setDark((v) => {
-      const next = !v;
-      document.documentElement.classList.toggle('dark', next);
-      return next;
-    });
-  };
+  const doPinChart = useCallback(async (chartHtml: string, sql: string | null | undefined, question: string) => {
+    const offset = pinnedDbIds.length * 20;
+    try {
+      const res = await fetch('/api/pins', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          question,
+          sql_query: sql || null,
+          chart_type: 'html',
+          chart_config: chartHtml,
+          rows_json: null,
+          x: offset, y: offset, width: 480, height: 320,
+        }),
+      });
+      if (!res.ok) return false;
+      const pin = await res.json();
+      setPinnedDbIds(prev => [...prev, pin.id]);
+      setPinCount(prev => prev + 1);
+      setPinRefresh(prev => prev + 1);
+      if (!chatOpen) setNewPinCount(prev => prev + 1);
+      return true;
+    } catch { return false; }
+  }, [sessionId, pinnedDbIds.length, chatOpen]);
 
-  const doPinChart = useCallback(
-    async (chartHtml: string, sql: string | null | undefined, question: string) => {
-      const offset = pinnedDbIds.length * 20;
-      try {
-        const res = await fetch('/api/pins', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            session_id: sessionId,
-            question,
-            sql_query: sql || null,
-            chart_type: 'html',
-            chart_config: chartHtml,
-            rows_json: null,
-            x: offset,
-            y: offset,
-            width: 600,
-            height: 400,
-          }),
-        });
-        if (res.ok) {
-          const pin = await res.json();
-          if (pin?.id) {
-            setPinnedDbIds((prev) => [...prev, pin.id]);
-          }
-        }
-      } catch {
-        // non-critical
-      }
-    },
-    [sessionId, pinnedDbIds],
-  );
+  const handlePinChart = useCallback((msg: Message) => {
+    if (!msg.chart) return;
+    doPinChart(msg.chart.html, msg.sql, msg.content || msg.chart.title || 'Chart');
+  }, [doPinChart]);
 
-  const handlePinChart = useCallback(
-    async (msg: Message) => {
-      if (!msg.chart || pinnedMsgIds.has(msg.id)) return;
+  const handlePinChartEvent = useCallback((msg: Message, event: ChartEvent, _idx: number) => {
+    doPinChart(event.html, msg.sql, msg.content || event.title || 'Chart');
+  }, [doPinChart]);
 
-      const question =
-        msg.content ||
-        messages.find((_, i) => messages[i + 1]?.id === msg.id)?.content ||
-        'Pinned chart';
-
-      await doPinChart(msg.chart.html, msg.sql || msg.chart.sql, question);
-
-      setPinnedMsgIds((prev) => new Set([...prev, msg.id]));
-      setPinRefresh((n) => n + 1);
-      setPinCount((n) => n + 1);
-      setNewPinCount((n) => n + 1);
-    },
-    [sessionId, messages, pinnedMsgIds, doPinChart],
-  );
-
-  const handlePinChartEvent = useCallback(
-    async (msg: Message, event: ChartEvent, idx: number) => {
-      const key = `${msg.id}-${idx}`;
-      if (pinnedMsgIds.has(key)) return;
-
-      const question = event.title || msg.content || `Chart ${idx + 1}`;
-      await doPinChart(event.html, event.sql, question);
-
-      setPinnedMsgIds((prev) => new Set([...prev, key]));
-      setPinRefresh((n) => n + 1);
-      setPinCount((n) => n + 1);
-      setNewPinCount((n) => n + 1);
-    },
-    [pinnedMsgIds, doPinChart],
-  );
-
-  // Resize panel by dragging its left edge
-  const startPanelResize = (e: React.MouseEvent) => {
+  const resizing = useRef(false);
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    resizing.current = true;
     const startX = e.clientX;
-    const origW = panelWidthRef.current;
-
+    const startW = panelWidthRef.current;
     const onMove = (ev: MouseEvent) => {
+      if (!resizing.current) return;
       const delta = startX - ev.clientX;
-      const nw = Math.min(MAX_PANEL_W, Math.max(MIN_PANEL_W, origW + delta));
-      setPanelWidth(nw);
+      const newW = Math.min(MAX_PANEL_W, Math.max(MIN_PANEL_W, startW + delta));
+      setPanelWidth(newW); panelWidthRef.current = newW;
     };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  };
-
-  const handleOpenChat = () => {
-    setChatOpen(true);
-    setNewPinCount(0);
-  };
+    const onUp = () => { resizing.current = false; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, []);
 
   return (
-    <div className="flex flex-col h-screen bg-background overflow-hidden">
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0A0A12', fontFamily: "'Inter', system-ui, sans-serif", overflow: 'hidden' }}>
       {/* Header */}
-      <header
-        className="flex items-center justify-between px-4 py-3 border-b shrink-0 bg-card"
-        style={{ borderBottomColor: 'var(--color-border)' }}
-      >
-        <div className="flex items-center gap-3">
-          {LOGO_URL ? (
-            <img src={LOGO_URL} alt="logo" className="h-7 w-auto" />
-          ) : (
-            <div
-              className="h-7 w-7 rounded flex items-center justify-center text-white text-xs font-bold"
-              style={{ backgroundColor: PRIMARY_COLOR }}
-            >
-              N
-            </div>
-          )}
+      <header style={{ background: 'linear-gradient(90deg, #0D0D1A 0%, #111128 100%)', borderBottom: '1px solid rgba(99,102,241,0.15)', padding: '0 24px', height: '56px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, zIndex: 50 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '30px', height: '30px', background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 14px rgba(99,102,241,0.45)' }}>
+            <BarChart3 size={15} color="white" />
+          </div>
           <div>
-            <h1 className="font-semibold text-sm text-foreground leading-none">{APP_TITLE}</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">{APP_SUBTITLE}</p>
+            <div style={{ fontSize: '15px', fontWeight: 600, letterSpacing: '-0.01em', background: 'linear-gradient(135deg, #818CF8 0%, #60A5FA 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{APP_TITLE}</div>
+            <div style={{ fontSize: '10px', color: '#64748B', marginTop: '-1px', letterSpacing: '0.02em' }}>{APP_SUBTITLE}</div>
           </div>
         </div>
-
-        <div className="flex items-center gap-2">
-          {/* Pin count badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {pinCount > 0 && (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Pin size={11} />
-              <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">
-                {pinCount}
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '20px', padding: '3px 10px', fontSize: '12px', color: '#60A5FA', fontWeight: 500 }}>
+              <Pin size={10} /><span>{pinCount} pinned</span>
             </div>
           )}
-          <span className="text-xs text-muted-foreground hidden sm:block">
-            Drag &amp; resize charts on the canvas
-          </span>
-          <button
-            onClick={toggleDark}
-            className="p-1.5 rounded border hover:bg-accent text-muted-foreground hover:text-foreground"
-            title={dark ? 'Light mode' : 'Dark mode'}
-          >
-            {dark ? <Sun size={15} /> : <Moon size={15} />}
-          </button>
         </div>
       </header>
 
-      {/* Full-width canvas */}
-      <div className={`flex-1 overflow-auto relative ${chatOpen ? 'pointer-events-none' : ''}`}>
+      {/* Canvas */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'auto', background: '#0A0A12', backgroundImage: 'radial-gradient(circle, rgba(99,102,241,0.06) 1px, transparent 1px)', backgroundSize: '28px 28px', pointerEvents: chatOpen ? 'none' : 'auto' }}>
+        {pinCount === 0 && (
+          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none', userSelect: 'none' }}>
+            <div style={{ width: '60px', height: '60px', margin: '0 auto 20px', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Sparkles size={26} style={{ color: '#818CF8' }} />
+            </div>
+            <h2 style={{ fontSize: '22px', fontWeight: 600, marginBottom: '10px', background: 'linear-gradient(135deg, #818CF8 0%, #60A5FA 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', margin: '0 0 10px' }}>Ask anything about your data</h2>
+            <p style={{ color: '#64748B', fontSize: '13px', maxWidth: '300px', margin: '0 auto 24px' }}>Open the chat, ask a question in natural language, and pin visualizations to build your dashboard.</p>
+            <button onClick={() => setChatOpen(true)} style={{ background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', color: 'white', border: 'none', borderRadius: '24px', padding: '10px 22px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px', boxShadow: '0 4px 20px rgba(99,102,241,0.4)', pointerEvents: 'auto' }}>
+              <MessageSquare size={14} /> Ask Genie
+            </button>
+          </div>
+        )}
         <PinnedCharts sessionId={sessionId} refreshTrigger={pinRefresh} />
       </div>
 
-      {/* Floating "Ask Genie 💬" button */}
+      {/* Floating Ask button */}
       {!chatOpen && (
-        <button
-          onClick={handleOpenChat}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-3 rounded-full shadow-lg text-white font-medium text-sm transition-transform hover:scale-105 active:scale-95"
-          style={{ backgroundColor: PRIMARY_COLOR }}
-        >
-          <MessageCircle size={18} />
-          Ask Genie 💬
-          {newPinCount > 0 && (
-            <span
-              className="ml-1 bg-white text-xs font-bold rounded-full px-1.5 py-0.5"
-              style={{ color: PRIMARY_COLOR }}
-            >
-              {newPinCount}
-            </span>
-          )}
+        <button onClick={() => { setChatOpen(true); setNewPinCount(0); }} style={{ position: 'fixed', bottom: '28px', right: '28px', display: 'flex', alignItems: 'center', gap: '8px', background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', color: 'white', border: 'none', borderRadius: '28px', padding: '12px 22px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 20px rgba(99,102,241,0.45)', zIndex: 40 }}>
+          <MessageSquare size={15} /><span>Ask Genie</span>
+          {newPinCount > 0 && <span style={{ background: '#22C55E', color: 'white', borderRadius: '9999px', fontSize: '10px', fontWeight: 700, padding: '1px 6px' }}>{newPinCount}</span>}
         </button>
       )}
 
-      {/* Slide-in chat drawer from right */}
+      {/* Chat drawer */}
       {chatOpen && (
-        <div
-          className="fixed top-0 right-0 bottom-0 z-40 flex shadow-2xl"
-          style={{ width: panelWidth }}
-        >
-          {/* Drag-to-resize handle on left edge */}
-          <div
-            className="w-1.5 h-full cursor-ew-resize bg-border/40 hover:bg-primary/30 transition-colors shrink-0"
-            onMouseDown={startPanelResize}
-          />
-
-          {/* Drawer content */}
-          <div className="flex flex-col flex-1 bg-background border-l overflow-hidden">
-            {/* Drawer header */}
-            <div
-              className="flex items-center justify-between px-3 py-2 border-b shrink-0 bg-card"
-              style={{ borderBottomColor: 'var(--color-border)' }}
-            >
-              <div className="flex items-center gap-2">
-                <MessageCircle size={14} style={{ color: PRIMARY_COLOR }} />
-                <span className="text-sm font-semibold text-foreground">Ask Genie</span>
+        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: `${panelWidth}px`, background: '#0D0D1A', borderLeft: '1px solid rgba(99,102,241,0.2)', boxShadow: '-8px 0 40px rgba(0,0,0,0.7)', zIndex: 50, display: 'flex', flexDirection: 'column' }}>
+          <div onMouseDown={handleResizeMouseDown} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', cursor: 'ew-resize', zIndex: 1 }} />
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(99,102,241,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(99,102,241,0.04)', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '24px', height: '24px', background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Sparkles size={12} color="white" />
               </div>
-              <button
-                onClick={() => setChatOpen(false)}
-                className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
-                title="Close"
-              >
-                <X size={16} />
-              </button>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: '#F8FAFC' }}>Genie Intelligence</span>
+              <span className="badge-indigo">Beta</span>
             </div>
-
-            {/* Chat UI */}
-            <div className="flex-1 min-h-0">
-              <ChatPanel
-                messages={messages}
-                isStreaming={isStreaming}
-                onSend={sendMessage}
-                onStop={stop}
-                onPinChart={handlePinChart}
-                onPinChartEvent={handlePinChartEvent}
-                pinnedIds={pinnedMsgIds}
-                sessionId={sessionId}
-              />
-            </div>
+            <button onClick={() => setChatOpen(false)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '6px', color: '#64748B', cursor: 'pointer', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={13} /></button>
+          </div>
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <ChatPanel messages={messages} isStreaming={isStreaming} onSend={sendMessage} onStop={stop} onPinChart={handlePinChart} onPinChartEvent={handlePinChartEvent} pinnedIds={pinnedMsgIds} sessionId={sessionId} />
           </div>
         </div>
       )}

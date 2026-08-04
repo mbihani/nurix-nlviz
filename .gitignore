@@ -24,3 +24,6 @@ bun.lock
 # Test
 test-results/
 playwright-report/
+
+# Local MLflow trace store
+mlflow.db

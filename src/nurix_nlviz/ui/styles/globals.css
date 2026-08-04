@@ -1,53 +1,53 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..700;1,14..32,300..700&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  /* Databricks red as primary */
-  --primary: oklch(0.55 0.22 27.5);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.965 0 0);
-  --secondary-foreground: oklch(0.2 0 0);
-  --muted: oklch(0.965 0 0);
-  --muted-foreground: oklch(0.55 0 0);
-  --accent: oklch(0.965 0 0);
-  --accent-foreground: oklch(0.2 0 0);
-  --destructive: oklch(0.55 0.22 27);
-  --destructive-foreground: oklch(0.55 0.22 27);
-  --border: oklch(0.91 0 0);
-  --input: oklch(0.91 0 0);
-  --ring: oklch(0.55 0.22 27.5);
-  --radius: 0.625rem;
+  --background: #0A0A12;
+  --foreground: #F8FAFC;
+  --card: #13131F;
+  --card-foreground: #F8FAFC;
+  --popover: #13131F;
+  --popover-foreground: #F8FAFC;
+  --primary: #3B82F6;
+  --primary-foreground: #FFFFFF;
+  --secondary: #1E1E2E;
+  --secondary-foreground: #94A3B8;
+  --muted: #1A1A2A;
+  --muted-foreground: #64748B;
+  --accent: #6366F1;
+  --accent-foreground: #FFFFFF;
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+  --border: rgba(99,102,241,0.15);
+  --input: #1A1A2A;
+  --ring: #3B82F6;
+  --radius: 0.75rem;
+  --surface-1: #0A0A12;
+  --surface-2: #0D0D1A;
+  --surface-3: #13131F;
+  --surface-4: #1A1A2A;
+  --indigo: #6366F1;
+  --indigo-light: #818CF8;
+  --blue: #3B82F6;
+  --blue-light: #60A5FA;
+  --green: #22C55E;
+  --orange: #F59E0B;
+  --red: #EF4444;
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --border-subtle: rgba(99,102,241,0.12);
+  --border-normal: rgba(99,102,241,0.22);
+  --shadow-card: 0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(99,102,241,0.1);
+  --shadow-glow: 0 0 32px rgba(99,102,241,0.25);
+  --gradient-text: linear-gradient(135deg, #818CF8 0%, #60A5FA 100%);
+  --gradient-blue: linear-gradient(135deg, #3B82F6 0%, #6366F1 100%);
 }
 
-.dark {
-  --background: oklch(0.13 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.16 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.16 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.55 0.22 27.5);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.22 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.22 0 0);
-  --muted-foreground: oklch(0.65 0 0);
-  --accent: oklch(0.22 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.45 0.18 27);
-  --destructive-foreground: oklch(0.55 0.22 27);
-  --border: oklch(0.25 0 0);
-  --input: oklch(0.25 0 0);
-  --ring: oklch(0.55 0.22 27.5);
-}
+.dark, html, body { color-scheme: dark; }
 
 @theme inline {
   --color-background: var(--background);
@@ -76,71 +76,53 @@
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
+  * { @apply border-border outline-ring/50; }
   body {
-    @apply bg-background text-foreground;
+    background-color: #0A0A12;
+    color: #F8FAFC;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
+  html { background-color: #0A0A12; }
 }
+
+.gradient-text {
+  background: var(--gradient-text);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.card-surface {
+  background: var(--surface-3);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-card);
+  border-radius: var(--radius);
+}
+.badge-green { background: rgba(34,197,94,0.12); color: #22C55E; border: 1px solid rgba(34,197,94,0.25); border-radius: 9999px; font-size: 0.7rem; font-weight: 600; padding: 2px 8px; }
+.badge-blue { background: rgba(59,130,246,0.12); color: #60A5FA; border: 1px solid rgba(59,130,246,0.25); border-radius: 9999px; font-size: 0.7rem; font-weight: 600; padding: 2px 8px; }
+.badge-indigo { background: rgba(99,102,241,0.12); color: #818CF8; border: 1px solid rgba(99,102,241,0.25); border-radius: 9999px; font-size: 0.7rem; font-weight: 600; padding: 2px 8px; }
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,0.5); }
 
 @keyframes fade-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-
-.animate-fade-in-up {
-  animation: fade-in-up 0.3s ease-out both;
-}
-
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: oklch(0.75 0 0);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.6 0 0);
-}
+.animate-fade-in-up { animation: fade-in-up 0.25s ease-out both; }
 
 @keyframes typing-dot {
-  0%, 60%, 100% {
-    opacity: 0.2;
-    transform: scale(0.8);
-  }
-  30% {
-    opacity: 1;
-    transform: scale(1);
-  }
+  0%, 60%, 100% { opacity: 0.2; transform: scale(0.8); }
+  30% { opacity: 1; transform: scale(1); }
 }
+.typing-dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #818CF8; animation: typing-dot 1.2s ease-in-out infinite; }
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
-.typing-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: typing-dot 1.2s ease-in-out infinite;
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(99,102,241,0.2); }
+  50% { box-shadow: 0 0 20px rgba(99,102,241,0.5); }
 }
-
-.typing-dot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.typing-dot:nth-child(3) {
-  animation-delay: 0.4s;
-}
+.pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }

@@ -32,6 +32,9 @@ env:
   # CONFIGURE(LAKEBASE_DATABASE) — Lakebase database name
   - name: LAKEBASE_DATABASE
     value: databricks_postgres
+  # CONFIGURE(NURIX_AGENT_URL) — nurix-agent app URL for chart generation
+  - name: NURIX_AGENT_URL
+    value: https://nurix-agent-7474660648944264.aws.databricksapps.com
 resources:
   - name: nurix-nlviz-db
     resource_type: database_instance
