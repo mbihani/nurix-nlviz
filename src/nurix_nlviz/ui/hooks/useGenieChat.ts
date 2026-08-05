@@ -145,8 +145,10 @@ function handleSSEEvent(
           return { ...m, thinking: event.text };
 
         case 'genie_text':
-          // nurix-agent narrative — accumulate as a subtle assistant note above the chart
-          return { ...m, genie_text: (m.genie_text ? m.genie_text + ' ' : '') + event.text };
+          // nurix-agent narrative — accumulate as a subtle assistant note above the chart.
+          // Join on a blank line so each event stays its own markdown block; a space
+          // would glue a list item onto the previous paragraph and lose the structure.
+          return { ...m, genie_text: (m.genie_text ? m.genie_text + '\n\n' : '') + event.text };
 
         case 'sql':
           return { ...m, sql: event.sql };

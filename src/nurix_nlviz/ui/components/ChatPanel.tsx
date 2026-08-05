@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Square, Database, ChevronDown, ChevronUp } from 'lucide-react';
+import { Send, Square, Database, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
 import type { Message, ChartEvent } from '../hooks/useGenieChat';
 import { ChartRenderer } from './ChartRenderer';
+import { MarkdownText } from './MarkdownText';
 
 export const SUGGESTED = [
   'What are the top feature areas by number of negative reviews?',
@@ -362,9 +363,16 @@ function MessageBubble({
       )}
 
       {/* Genie narrative text — subtle assistant note above the chart */}
-      {msg.genie_text && (
-        <div style={{ borderLeft: '2px solid #6366F1', paddingLeft: '10px', marginBottom: '8px', color: '#94A3B8', fontSize: '12px', fontStyle: 'italic', background: 'rgba(99,102,241,0.05)', padding: '7px 10px', borderRadius: '0 6px 6px 0' }}>
-          {msg.genie_text}
+      {msg.genie_text && msg.genie_text.trim() && (
+        <div
+          className="overflow-y-auto"
+          style={{ borderLeft: '2px solid #6366F1', marginBottom: '8px', color: '#94A3B8', fontSize: '13px', lineHeight: 1.6, background: 'rgba(99,102,241,0.05)', padding: '8px 12px', borderRadius: '0 6px 6px 0', maxHeight: '260px' }}
+        >
+          <div className="flex items-center gap-1" style={{ color: '#64748B', fontSize: '11px', fontWeight: 500, marginBottom: '5px' }}>
+            <Sparkles size={11} />
+            <span>Genie</span>
+          </div>
+          <MarkdownText text={msg.genie_text} />
         </div>
       )}
 
