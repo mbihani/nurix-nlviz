@@ -247,7 +247,7 @@ function MultiChartCard({
           style={{ background: 'rgba(8,145,178,0.05)' }}
         >
           <div
-            className="rounded-full px-3 py-2 flex items-center gap-1.5 text-xs"
+            className="rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs"
             style={{ background: '#0F172A', color: '#94A3B8' }}
           >
             <span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" />
@@ -401,7 +401,7 @@ function MessageBubble({
       {msg.isLoading && (
         <div className="flex items-center gap-2">
           <div
-            className="rounded-full px-3 py-2 flex items-center gap-1.5 text-xs"
+            className="rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs"
             style={{ background: '#0F172A', border: '1px solid rgba(8,145,178,0.15)', color: '#94A3B8' }}
           >
             <span className="typing-dot" />
@@ -489,7 +489,7 @@ function MessageBubble({
               style={{ background: 'rgba(8,145,178,0.05)' }}
             >
               <div
-                className="rounded-full px-3 py-2 flex items-center gap-1.5 text-xs"
+                className="rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs"
                 style={{ background: '#0F172A', border: '1px solid rgba(8,145,178,0.15)', color: '#94A3B8' }}
               >
                 <span className="typing-dot" />
@@ -563,7 +563,7 @@ function MessageBubble({
       {/* Text answer — suppress generic filler when a chart is present */}
       {msg.content && !msg.isLoading && !msg.chart && !(msg.charts && msg.charts.length > 0) && (
         <div
-          style={{ background: '#0F172A', border: '1px solid rgba(8,145,178,0.15)', borderRadius: '4px 16px 16px 16px', padding: '10px 14px', fontSize: '13px', color: '#FFFFFF', maxWidth: '95%' }}
+          style={{ background: '#0F172A', border: '1px solid rgba(8,145,178,0.15)', borderRadius: '4px 8px 8px 8px', padding: '10px 14px', fontSize: '13px', color: '#FFFFFF', maxWidth: '95%' }}
         >
           {msg.content}
         </div>

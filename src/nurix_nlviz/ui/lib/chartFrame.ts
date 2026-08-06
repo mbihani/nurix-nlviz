@@ -34,9 +34,10 @@ body > * { flex: 0 0 auto; min-width: 0; }
 h1, h2, h3, h4, h5, h6 { margin: 0 0 4px !important; line-height: 1.25 !important; }
 p { margin: 0 0 4px !important; }
 canvas { display: block !important; max-width: 100% !important; }
-/* Applied by the fit script to the body-level ancestor of a canvas/table. */
+/* Applied by the fit script to the body-level ancestor of fitted content. */
 .nlviz-fill { flex: 1 1 auto !important; min-height: 0 !important; position: relative !important; }
 .nlviz-scroll { overflow: auto !important; }
+.nlviz-scroll > table { width: 100%; }
 table { max-width: 100%; }
 `;
 
@@ -46,7 +47,14 @@ table { max-width: 100%; }
  * the in-iframe heading is a redundant second header stealing chart height.
  */
 const HIDE_TITLE_STYLE = `
-body > h1, body > h2, body > h3, body > h4, body > h5, body > h6 { display: none !important; }
+body > h1, body > h2, body > h3, body > h4, body > h5, body > h6,
+body > header > h1, body > header > h2, body > header > h3,
+body > header > h4, body > header > h5, body > header > h6,
+body > div:first-child > h1:only-child, body > div:first-child > h2:only-child,
+body > div:first-child > h3:only-child, body > div:first-child > h4:only-child,
+body > div:first-child > h5:only-child, body > div:first-child > h6:only-child {
+  display: none !important;
+}
 `;
 
 const FIT_SCRIPT = `
@@ -64,12 +72,31 @@ const FIT_SCRIPT = `
       C.defaults.maintainAspectRatio = false;
     } catch (e) {}
     function Wrapped(item, cfg) {
-      if (cfg && typeof cfg === 'object') {
-        cfg.options = cfg.options || {};
-        cfg.options.responsive = true;
-        cfg.options.maintainAspectRatio = false;
+      var chartCfg = cfg;
+      // Configs may be frozen, sealed, null-prototype, or expose non-writable
+      // options. A failed fit patch must never prevent chart construction.
+      try {
+        if (cfg && typeof cfg === 'object') {
+          cfg.options = cfg.options || {};
+          cfg.options.responsive = true;
+          cfg.options.maintainAspectRatio = false;
+        }
+      } catch (e) {
+        // Chart.js also normalizes its config, so passing the original frozen
+        // object can fail inside Chart.js. Clone only on mutation failure.
+        try {
+          chartCfg = Object.assign(Object.create(Object.getPrototypeOf(cfg)), cfg);
+          chartCfg.options = Object.assign(
+            Object.create(cfg.options ? Object.getPrototypeOf(cfg.options) : Object.prototype),
+            cfg.options || {}
+          );
+          chartCfg.options.responsive = true;
+          chartCfg.options.maintainAspectRatio = false;
+        } catch (cloneError) {
+          chartCfg = cfg;
+        }
       }
-      var inst = new C(item, cfg);
+      var inst = new C(item, chartCfg);
       // The wrapper class may land after construction; re-measure once.
       setTimeout(function () { try { inst.resize(); } catch (e) {} }, 0);
       return inst;
@@ -92,9 +119,52 @@ const FIT_SCRIPT = `
     return el && el.parentElement === document.body ? el : null;
   }
 
+  function scrollTarget(el) {
+    var bc = bodyChild(el);
+    if (!bc) return null;
+    if (bc.tagName === 'TABLE') {
+      var wrapper = document.createElement('div');
+      wrapper.setAttribute('data-nlviz-table-scroll', '');
+      bc.parentNode.insertBefore(wrapper, bc);
+      wrapper.appendChild(bc);
+      return wrapper;
+    }
+    return bc;
+  }
+
+  function fitNonCanvasContent() {
+    var existing = document.querySelector('[data-nlviz-prose-scroll]');
+    if (existing) {
+      existing.classList.add(FILL, SCROLL);
+      return;
+    }
+    var wrapper = document.createElement('div');
+    wrapper.setAttribute('data-nlviz-prose-scroll', '');
+    var children = Array.prototype.slice.call(document.body.childNodes);
+    var first = null;
+    for (var i = 0; i < children.length; i++) {
+      var child = children[i];
+      if (child.nodeType === 1 && /^(SCRIPT|STYLE|LINK)$/i.test(child.nodeName)) continue;
+      if (child.nodeType === 3 && !child.textContent.trim()) continue;
+      if (!first) first = child;
+    }
+    if (!first) return;
+    document.body.insertBefore(wrapper, first);
+    for (var j = 0; j < children.length; j++) {
+      var node = children[j];
+      if (node === wrapper) continue;
+      if (node.nodeType === 1 && /^(SCRIPT|STYLE|LINK)$/i.test(node.nodeName)) continue;
+      if (node.nodeType === 3 && !node.textContent.trim()) continue;
+      wrapper.appendChild(node);
+    }
+    wrapper.classList.add(FILL, SCROLL);
+  }
+
   function fit() {
     if (!document.body) return;
     var canvases = document.getElementsByTagName('canvas');
+    var prose = document.querySelector('[data-nlviz-prose-scroll]');
+    if (canvases.length && prose) prose.classList.remove(FILL, SCROLL);
     for (var i = 0; i < canvases.length; i++) {
       var n = canvases[i].parentElement;
       while (n && n !== document.body) {
@@ -108,9 +178,10 @@ const FIT_SCRIPT = `
     // letting them push the page past the viewport.
     var tables = document.getElementsByTagName('table');
     for (var j = 0; j < tables.length; j++) {
-      var bc = bodyChild(tables[j]);
+      var bc = scrollTarget(tables[j]);
       if (bc) { bc.classList.add(FILL); bc.classList.add(SCROLL); }
     }
+    if (!canvases.length && !tables.length) fitNonCanvasContent();
   }
 
   function schedule() { fit(); setTimeout(fit, 0); setTimeout(fit, 120); setTimeout(fit, 500); }
@@ -122,15 +193,64 @@ const FIT_SCRIPT = `
   }
   window.addEventListener('load', schedule);
 
-  // Charts are often appended by a script that runs after our injection.
+  // Charts are often appended after a slow CDN load. Observe for the iframe's
+  // full lifetime; childList-only observation avoids loops from class/style fits.
   try {
     var mo = new MutationObserver(fit);
     var start = function () { if (document.body) mo.observe(document.body, { childList: true, subtree: true }); };
     if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
-    setTimeout(function () { try { mo.disconnect(); } catch (e) {} }, 4000);
+  } catch (e) {}
+  try {
+    var ro = new ResizeObserver(fit);
+    ro.observe(document.documentElement);
   } catch (e) {}
 })();
 `;
+
+/** Find the end of a real opening <head> tag without matching HTML comments,
+ * raw-text script/style contents, or quoted attribute values. */
+function realHeadEnd(html: string): number {
+  const lower = html.toLowerCase();
+  let i = 0;
+  while (i < html.length) {
+    const lt = html.indexOf('<', i);
+    if (lt < 0) return -1;
+    if (html.startsWith('<!--', lt)) {
+      const end = html.indexOf('-->', lt + 4);
+      i = end < 0 ? html.length : end + 3;
+      continue;
+    }
+    let cursor = lt + 1;
+    if (html[cursor] === '/' || html[cursor] === '!' || html[cursor] === '?') cursor += 1;
+    while (/\s/.test(html[cursor] ?? '')) cursor += 1;
+    const nameStart = cursor;
+    while (/[a-z0-9:-]/i.test(html[cursor] ?? '')) cursor += 1;
+    const name = lower.slice(nameStart, cursor);
+    let quote = '';
+    while (cursor < html.length) {
+      const char = html[cursor];
+      if (quote) {
+        if (char === quote) quote = '';
+      } else if (char === '"' || char === "'") {
+        quote = char;
+      } else if (char === '>') {
+        cursor += 1;
+        break;
+      }
+      cursor += 1;
+    }
+    const closing = html[lt + 1] === '/';
+    if (!closing && name === 'head') return cursor;
+    if (!closing && (name === 'script' || name === 'style')) {
+      const close = lower.indexOf(`</${name}`, cursor);
+      if (close < 0) return -1;
+      i = close;
+      continue;
+    }
+    i = Math.max(cursor, lt + 1);
+  }
+  return -1;
+}
 
 /**
  * Inject the fit chrome into a generated chart document.
@@ -145,18 +265,12 @@ export function withFittedChrome(html: string, opts: { hideTitle?: boolean } = {
   const css = opts.hideTitle ? FIT_STYLE + HIDE_TITLE_STYLE : FIT_STYLE;
   const payload = `<style id="nlviz-fit">${css}</style><script>${FIT_SCRIPT}</script>`;
 
-  const headMatch = html.match(/<head[^>]*>/i);
-  if (headMatch?.index !== undefined) {
-    const at = headMatch.index + headMatch[0].length;
+  const at = realHeadEnd(html);
+  if (at >= 0) {
     return html.slice(0, at) + payload + html.slice(at);
   }
 
-  // No <head> — inject after <html> (the browser hoists it) or prepend.
-  const htmlMatch = html.match(/<html[^>]*>/i);
-  if (htmlMatch?.index !== undefined) {
-    const at = htmlMatch.index + htmlMatch[0].length;
-    return html.slice(0, at) + payload + html.slice(at);
-  }
-
+  // With no real head, prepend. The HTML parser hoists style/script into head,
+  // and insertion is guaranteed to precede every CDN script in the document.
   return payload + html;
 }
