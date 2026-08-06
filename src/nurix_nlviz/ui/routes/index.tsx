@@ -20,6 +20,47 @@ function getOrCreateSessionId(): string {
 const MIN_PANEL_W = 340;
 const MAX_PANEL_W = 660;
 const DEFAULT_PANEL_W = 440;
+const GRID_COLUMN = 96;
+const GRID_ROW = 72;
+const GRID_GUTTER = 12;
+const GRID_X_STEP = GRID_COLUMN + GRID_GUTTER;
+const GRID_Y_STEP = GRID_ROW + GRID_GUTTER;
+const DEFAULT_COL_SPAN = 5;
+const DEFAULT_ROW_SPAN = 5;
+const DEFAULT_CARD_W = DEFAULT_COL_SPAN * GRID_COLUMN + (DEFAULT_COL_SPAN - 1) * GRID_GUTTER;
+const DEFAULT_CARD_H = DEFAULT_ROW_SPAN * GRID_ROW + (DEFAULT_ROW_SPAN - 1) * GRID_GUTTER;
+
+interface PinLayout { id: number; x: number; y: number; width: number; height: number }
+
+const rectsOverlap = (a: PinLayout | Omit<PinLayout, 'id'>, b: PinLayout) => !(
+  a.x + a.width + GRID_GUTTER <= b.x ||
+  b.x + b.width + GRID_GUTTER <= a.x ||
+  a.y + a.height + GRID_GUTTER <= b.y ||
+  b.y + b.height + GRID_GUTTER <= a.y
+);
+
+/**
+ * Pick the first grid slot whose rect overlaps no existing pinned card.
+ *
+ * Scans row-major (left-to-right, then down) over the CURRENT pins' real rects —
+ * not a count — so placement stays correct after deletes, drags and resizes.
+ * `canvasWidth` clamps the rightmost column so a card is never dropped
+ * off-screen; a card wider than the canvas still starts at x=0.
+ */
+function findFreeGridSlot(pins: PinLayout[], canvasWidth: number) {
+  const maxX = Math.max(0, canvasWidth - DEFAULT_CARD_W);
+  const lastCol = Math.floor(maxX / GRID_X_STEP);
+
+  for (let row = 0; row < 200; row += 1) {
+    for (let col = 0; col <= lastCol; col += 1) {
+      const candidate = { x: col * GRID_X_STEP, y: row * GRID_Y_STEP, width: DEFAULT_CARD_W, height: DEFAULT_CARD_H };
+      if (!pins.some((pin) => rectsOverlap(candidate, pin))) return candidate;
+    }
+  }
+  // Exhausted the scan — drop it below everything rather than on top of a card.
+  const lowest = pins.reduce((acc, p) => Math.max(acc, p.y + p.height), 0);
+  return { x: 0, y: lowest + GRID_GUTTER, width: DEFAULT_CARD_W, height: DEFAULT_CARD_H };
+}
 
 function App() {
   const sessionId = getOrCreateSessionId();
@@ -31,22 +72,32 @@ function App() {
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_W);
   const panelWidthRef = useRef(panelWidth);
   panelWidthRef.current = panelWidth;
-  const [pinnedDbIds, setPinnedDbIds] = useState<number[]>([]);
   const [newPinCount, setNewPinCount] = useState(0);
+
+  // Live rects of the rendered cards, reported by PinnedCharts. Held in a ref so
+  // placement always reads the current layout — a state snapshot captured in
+  // doPinChart's closure goes stale after a drag/resize/delete.
+  const pinLayoutsRef = useRef<PinLayout[]>([]);
+  const handleLayoutsChange = useCallback((rects: PinLayout[]) => {
+    pinLayoutsRef.current = rects;
+  }, []);
+
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch(`/api/pins?session_id=${encodeURIComponent(sessionId)}`)
       .then(r => r.ok ? r.json() : [])
-      .then((pins: { id: number }[]) => {
+      .then((pins: PinLayout[]) => {
         if (pins.length > 0) {
           setPinCount(pins.length);
-          setPinnedDbIds(pins.map(p => p.id));
+          pinLayoutsRef.current = pins;
         }
       }).catch(() => {});
   }, [sessionId]);
 
   const doPinChart = useCallback(async (chartHtml: string, sql: string | null | undefined, question: string) => {
-    const offset = pinnedDbIds.length * 20;
+    const canvasWidth = canvasRef.current?.clientWidth ?? DEFAULT_CARD_W;
+    const slot = findFreeGridSlot(pinLayoutsRef.current, canvasWidth);
     try {
       const res = await fetch('/api/pins', {
         method: 'POST',
@@ -58,18 +109,20 @@ function App() {
           chart_type: 'html',
           chart_config: chartHtml,
           rows_json: null,
-          x: offset, y: offset, width: 480, height: 320,
+          ...slot,
         }),
       });
       if (!res.ok) return false;
       const pin = await res.json();
-      setPinnedDbIds(prev => [...prev, pin.id]);
+      // Record the new rect immediately: two pins issued back-to-back must not
+      // both resolve to the same free slot before PinnedCharts re-reports.
+      pinLayoutsRef.current = [...pinLayoutsRef.current, { id: pin.id, ...slot }];
       setPinCount(prev => prev + 1);
       setPinRefresh(prev => prev + 1);
       if (!chatOpen) setNewPinCount(prev => prev + 1);
       return true;
     } catch { return false; }
-  }, [sessionId, pinnedDbIds.length, chatOpen]);
+  }, [sessionId, chatOpen]);
 
   const handlePinChart = useCallback((msg: Message) => {
     if (!msg.chart) return;
@@ -105,65 +158,65 @@ function App() {
   }, []);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0A0A12', fontFamily: "'Inter', system-ui, sans-serif", overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#020617', fontFamily: "'Inter', system-ui, sans-serif", overflow: 'hidden' }}>
       {/* Header */}
-      <header style={{ background: 'linear-gradient(90deg, #0D0D1A 0%, #111128 100%)', borderBottom: '1px solid rgba(99,102,241,0.15)', padding: '0 24px', height: '56px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, zIndex: 50 }}>
+      <header style={{ background: '#020617', borderBottom: '1px solid #1E293B', padding: '0 24px', height: '56px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, zIndex: 50 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ width: '30px', height: '30px', background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 14px rgba(99,102,241,0.45)' }}>
+          <div style={{ width: '30px', height: '30px', background: '#0891B2', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <BarChart3 size={15} color="white" />
           </div>
           <div>
-            <div style={{ fontSize: '15px', fontWeight: 600, letterSpacing: '-0.01em', background: 'linear-gradient(135deg, #818CF8 0%, #60A5FA 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{APP_TITLE}</div>
+            <div style={{ fontSize: '15px', fontWeight: 600, letterSpacing: '-0.01em', color: '#FFFFFF' }}>{APP_TITLE}</div>
             <div style={{ fontSize: '10px', color: '#64748B', marginTop: '-1px', letterSpacing: '0.02em' }}>{APP_SUBTITLE}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {pinCount > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '20px', padding: '3px 10px', fontSize: '12px', color: '#60A5FA', fontWeight: 500 }}>
-              <Pin size={10} /><span>{pinCount} pinned</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(8,145,178,0.1)', border: '1px solid rgba(8,145,178,0.2)', borderRadius: '6px', padding: '3px 10px', fontSize: '12px', color: '#22D3EE', fontWeight: 500 }}>
+              <Pin size={10} /><span style={{ color: '#FFFFFF', fontWeight: 600 }}>{pinCount}</span><span style={{ color: '#94A3B8' }}>pinned</span>
             </div>
           )}
         </div>
       </header>
 
       {/* Canvas */}
-      <div style={{ flex: 1, position: 'relative', overflow: 'auto', background: '#0A0A12', backgroundImage: 'radial-gradient(circle, rgba(99,102,241,0.06) 1px, transparent 1px)', backgroundSize: '28px 28px', pointerEvents: chatOpen ? 'none' : 'auto' }}>
+      <div ref={canvasRef} style={{ flex: 1, position: 'relative', overflow: 'auto', backgroundColor: '#020617', backgroundImage: 'linear-gradient(#0F172A 1px, transparent 1px), linear-gradient(90deg, #0F172A 1px, transparent 1px)', backgroundSize: `${GRID_X_STEP}px ${GRID_Y_STEP}px` }}>
         {pinCount === 0 && (
           <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none', userSelect: 'none' }}>
-            <div style={{ width: '60px', height: '60px', margin: '0 auto 20px', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Sparkles size={26} style={{ color: '#818CF8' }} />
+            <div style={{ width: '60px', height: '60px', margin: '0 auto 20px', background: 'rgba(8,145,178,0.1)', border: '1px solid rgba(8,145,178,0.2)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Sparkles size={26} style={{ color: '#22D3EE' }} />
             </div>
-            <h2 style={{ fontSize: '22px', fontWeight: 600, marginBottom: '10px', background: 'linear-gradient(135deg, #818CF8 0%, #60A5FA 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', margin: '0 0 10px' }}>Ask anything about your data</h2>
+            <h2 style={{ fontSize: '22px', fontWeight: 600, color: '#FFFFFF', margin: '0 0 10px' }}>Ask anything about your data</h2>
             <p style={{ color: '#64748B', fontSize: '13px', maxWidth: '300px', margin: '0 auto 24px' }}>Open the chat, ask a question in natural language, and pin visualizations to build your dashboard.</p>
-            <button onClick={() => setChatOpen(true)} style={{ background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', color: 'white', border: 'none', borderRadius: '24px', padding: '10px 22px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px', boxShadow: '0 4px 20px rgba(99,102,241,0.4)', pointerEvents: 'auto' }}>
+            <button onClick={() => setChatOpen(true)} style={{ background: '#0891B2', color: 'white', border: 'none', borderRadius: '8px', padding: '10px 22px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px', pointerEvents: 'auto' }}>
               <MessageSquare size={14} /> Ask Genie
             </button>
           </div>
         )}
-        <PinnedCharts sessionId={sessionId} refreshTrigger={pinRefresh} />
+        <PinnedCharts sessionId={sessionId} refreshTrigger={pinRefresh} onLayoutsChange={handleLayoutsChange} />
       </div>
 
       {/* Floating Ask button */}
       {!chatOpen && (
-        <button onClick={() => { setChatOpen(true); setNewPinCount(0); }} style={{ position: 'fixed', bottom: '28px', right: '28px', display: 'flex', alignItems: 'center', gap: '8px', background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', color: 'white', border: 'none', borderRadius: '28px', padding: '12px 22px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 20px rgba(99,102,241,0.45)', zIndex: 40 }}>
+        <button onClick={() => { setChatOpen(true); setNewPinCount(0); }} style={{ position: 'fixed', bottom: '28px', right: '28px', display: 'flex', alignItems: 'center', gap: '8px', background: '#0891B2', color: 'white', border: 'none', borderRadius: '8px', padding: '12px 22px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', zIndex: 40 }}>
           <MessageSquare size={15} /><span>Ask Genie</span>
-          {newPinCount > 0 && <span style={{ background: '#22C55E', color: 'white', borderRadius: '9999px', fontSize: '10px', fontWeight: 700, padding: '1px 6px' }}>{newPinCount}</span>}
+          {newPinCount > 0 && <span style={{ background: '#22D3EE', color: 'white', borderRadius: '4px', fontSize: '10px', fontWeight: 700, padding: '1px 6px' }}>{newPinCount}</span>}
         </button>
       )}
 
       {/* Chat drawer */}
       {chatOpen && (
-        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: `${panelWidth}px`, background: '#0D0D1A', borderLeft: '1px solid rgba(99,102,241,0.2)', boxShadow: '-8px 0 40px rgba(0,0,0,0.7)', zIndex: 50, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: `${panelWidth}px`, background: '#020617', borderLeft: '1px solid #1E293B', zIndex: 50, display: 'flex', flexDirection: 'column' }}>
           <div onMouseDown={handleResizeMouseDown} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', cursor: 'ew-resize', zIndex: 1 }} />
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(99,102,241,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(99,102,241,0.04)', flexShrink: 0 }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(8,145,178,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(8,145,178,0.04)', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '24px', height: '24px', background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: '24px', height: '24px', background: '#0891B2', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Sparkles size={12} color="white" />
               </div>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: '#F8FAFC' }}>Genie Intelligence</span>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: '#FFFFFF' }}>Genie Intelligence</span>
               <span className="badge-indigo">Beta</span>
             </div>
-            <button onClick={() => setChatOpen(false)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '6px', color: '#64748B', cursor: 'pointer', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={13} /></button>
+            <button onClick={() => setChatOpen(false)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(8,145,178,0.15)', borderRadius: '6px', color: '#64748B', cursor: 'pointer', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={13} /></button>
           </div>
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <ChatPanel messages={messages} isStreaming={isStreaming} onSend={sendMessage} onStop={stop} onPinChart={handlePinChart} onPinChartEvent={handlePinChartEvent} pinnedIds={pinnedMsgIds} sessionId={sessionId} />
