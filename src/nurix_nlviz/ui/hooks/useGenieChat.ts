@@ -7,6 +7,8 @@ export type ChartEvent = {
   columns?: { name: string; type: string }[];
   chart_index?: number;
   chart_total?: number;
+  index?: number;
+  total?: number;
   title?: string;
 };
 
@@ -40,7 +42,7 @@ export function useGenieChat(sessionId: string) {
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
-    async (question: string) => {
+    async (question: string, deepResearch = false) => {
       if (isStreaming) return;
 
       const userMsg: Message = {
@@ -66,7 +68,11 @@ export function useGenieChat(sessionId: string) {
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question, session_id: sessionId }),
+          body: JSON.stringify({
+            question,
+            session_id: sessionId,
+            deep_research: deepResearch,
+          }),
           signal: abortRef.current.signal,
         });
 
@@ -157,10 +163,12 @@ function handleSSEEvent(
           return { ...m, columns: event.columns, rows: event.rows };
 
         case 'chart': {
-          const isMulti = typeof event.chart_total === 'number' && event.chart_total > 1;
+          const chartIndex = event.chart_index ?? event.index;
+          const chartTotal = event.chart_total ?? event.total;
+          const isMulti = typeof chartTotal === 'number' && chartTotal > 1;
           if (isMulti) {
             const charts = [...(m.charts ?? [])];
-            charts[event.chart_index ?? charts.length] = event;
+            charts[chartIndex ?? charts.length] = event;
             return { ...m, charts, content: m.content || '', thinking: undefined };
           }
           return {

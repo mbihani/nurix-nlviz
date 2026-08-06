@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Square, Database, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
+import { Send, Square, Database, ChevronDown, ChevronUp, Sparkles, Microscope } from 'lucide-react';
 import type { Message, ChartEvent } from '../hooks/useGenieChat';
 import { ChartRenderer } from './ChartRenderer';
 import { MarkdownText } from './MarkdownText';
@@ -13,7 +13,7 @@ export const SUGGESTED = [
 interface ChatPanelProps {
   messages: Message[];
   isStreaming: boolean;
-  onSend: (q: string) => void;
+  onSend: (q: string, deepResearch?: boolean) => void;
   onStop: () => void;
   onPinChart: (msg: Message) => void;
   onPinChartEvent?: (msg: Message, event: ChartEvent, idx: number) => void;
@@ -32,6 +32,7 @@ export function ChatPanel({
   sessionId,
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
+  const [deepResearch, setDeepResearch] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -44,7 +45,7 @@ export function ChatPanel({
     const q = input.trim();
     if (!q || isStreaming) return;
     setInput('');
-    onSend(q);
+    onSend(q, deepResearch);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -67,7 +68,8 @@ export function ChatPanel({
               {SUGGESTED.map((s) => (
                 <button
                   key={s}
-                  onClick={() => onSend(s)}
+                  onClick={() => onSend(s, deepResearch)}
+                  disabled={isStreaming}
                   style={{
                     background: 'rgba(99,102,241,0.08)',
                     border: '1px solid rgba(99,102,241,0.2)',
@@ -104,6 +106,39 @@ export function ChatPanel({
 
       {/* Input bar */}
       <div className="p-3" style={{ borderTop: '1px solid rgba(99,102,241,0.12)' }}>
+        <div className="mb-2 flex items-center gap-2 min-h-[28px]">
+          <button
+            type="button"
+            aria-pressed={deepResearch}
+            disabled={isStreaming}
+            onClick={() => setDeepResearch((enabled) => !enabled)}
+            className="disabled:opacity-50"
+            style={{
+              background: deepResearch ? 'rgba(99,102,241,0.18)' : '#13131F',
+              border: deepResearch ? '1px solid #6366F1' : '1px solid rgba(139,139,160,0.25)',
+              borderRadius: '9999px',
+              color: deepResearch ? '#818CF8' : '#8B8BA0',
+              cursor: isStreaming ? 'not-allowed' : 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '12px',
+              fontWeight: 500,
+              padding: '5px 10px',
+              transition: 'all 0.15s',
+            }}
+            title="Use deeper analysis for this question"
+          >
+            <Microscope size={13} />
+            <span>Deep research</span>
+            <span style={{ color: deepResearch ? '#22C55E' : '#8B8BA0' }}>
+              {deepResearch ? 'On' : 'Off'}
+            </span>
+          </button>
+          {deepResearch && (
+            <span style={{ color: '#8B8BA0', fontSize: '11px' }}>~1–2 min, multiple charts</span>
+          )}
+        </div>
         <form onSubmit={handleSubmit} className="flex gap-2 items-end">
           <textarea
             ref={textareaRef}
@@ -406,16 +441,19 @@ function MessageBubble({
       )}
 
       {/* Multi-chart grid */}
-      {msg.charts && msg.charts.length > 1 && (
+      {msg.charts && msg.charts.filter((chart): chart is ChartEvent => Boolean(chart)).length > 0 && (
         <div className="grid grid-cols-2 gap-2">
-          {msg.charts.map((chartEvent, idx) => (
+          {msg.charts
+            .map((chartEvent, idx) => ({ chartEvent, idx }))
+            .filter((entry): entry is { chartEvent: ChartEvent; idx: number } => Boolean(entry.chartEvent))
+            .map(({ chartEvent, idx }) => (
             <MultiChartCard
               key={idx}
               chartEvent={chartEvent}
               sessionId={sessionId}
               onPin={() => onPinChartEvent ? onPinChartEvent(msg, chartEvent, idx) : onPin({ ...msg, chart: chartEvent })}
             />
-          ))}
+            ))}
         </div>
       )}
 

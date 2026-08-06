@@ -2,6 +2,7 @@ import { useQuery, useSuspenseQuery, useMutation } from "@tanstack/react-query";
 import type { UseQueryOptions, UseSuspenseQueryOptions, UseMutationOptions } from "@tanstack/react-query";
 
 export interface ChatRequest {
+  deep_research?: boolean;
   question: string;
   session_id: string;
 }

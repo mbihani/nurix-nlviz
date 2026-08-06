@@ -51,6 +51,7 @@ async def chat(
         async for chunk in run_chat_agent_via_external(
             question=body.question,
             session_id=body.session_id,
+            deep_research=body.deep_research,
             config=config,
         ):
             yield chunk

@@ -302,6 +302,7 @@ async def run_chat_agent(
 async def run_chat_agent_via_external(
     question: str,
     session_id: str,
+    deep_research: bool,
     config: AppConfig,
 ) -> AsyncIterator[str]:
     """Proxy chat to nurix-agent, forwarding SSE events."""
@@ -311,7 +312,11 @@ async def run_chat_agent_via_external(
             async with client.stream(
                 "POST",
                 f"{config.nurix_agent_url}/chat",
-                json={"question": question, "session_id": session_id},
+                json={
+                    "question": question,
+                    "session_id": session_id,
+                    "deep_research": deep_research,
+                },
                 headers={
                     "Authorization": f"Bearer {token}",
                     "Accept": "text/event-stream",
@@ -482,5 +487,4 @@ def _try_parse_genie_result(content) -> tuple[list[dict], list[list]] | None:
             return cols, rows
 
     return None
-
 

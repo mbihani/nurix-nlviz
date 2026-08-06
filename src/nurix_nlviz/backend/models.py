@@ -20,6 +20,7 @@ class PinIn(BaseModel):
 class ChatRequest(BaseModel):
     question: str
     session_id: str
+    deep_research: bool = False
 
 
 class PinOut(BaseModel):
