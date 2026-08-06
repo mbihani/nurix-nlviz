@@ -71,32 +71,77 @@ const FIT_SCRIPT = `
       C.defaults.responsive = true;
       C.defaults.maintainAspectRatio = false;
     } catch (e) {}
+    function mutableContainers(value, seen) {
+      if (!value || typeof value !== 'object') return value;
+      var proto = Object.getPrototypeOf(value);
+      var isArray = Array.isArray(value);
+      if (!isArray && proto !== Object.prototype && proto !== null) return value;
+      seen = seen || new WeakMap();
+      if (seen.has(value)) return seen.get(value);
+      var copy = isArray ? [] : Object.create(proto);
+      seen.set(value, copy);
+      Reflect.ownKeys(value).forEach(function (key) {
+        if (isArray && key === 'length') return;
+        Object.defineProperty(copy, key, {
+          value: mutableContainers(value[key], seen),
+          writable: true,
+          enumerable: Object.prototype.propertyIsEnumerable.call(value, key),
+          configurable: true
+        });
+      });
+      return copy;
+    }
+    function requiresMutableContainers(value, seen) {
+      if (!value || typeof value !== 'object') return false;
+      var proto = Object.getPrototypeOf(value);
+      if (!Array.isArray(value) && proto !== Object.prototype && proto !== null) return false;
+      seen = seen || new WeakSet();
+      if (seen.has(value)) return false;
+      seen.add(value);
+      if (!Object.isExtensible(value)) return true;
+      var keys = Reflect.ownKeys(value);
+      for (var i = 0; i < keys.length; i++) {
+        var descriptor = Object.getOwnPropertyDescriptor(value, keys[i]);
+        if (descriptor && 'value' in descriptor) {
+          if (descriptor.writable === false) return true;
+          if (requiresMutableContainers(descriptor.value, seen)) return true;
+        }
+      }
+      return false;
+    }
     function Wrapped(item, cfg) {
       var chartCfg = cfg;
       // Configs may be frozen, sealed, null-prototype, or expose non-writable
       // options. A failed fit patch must never prevent chart construction.
       try {
         if (cfg && typeof cfg === 'object') {
-          cfg.options = cfg.options || {};
-          cfg.options.responsive = true;
-          cfg.options.maintainAspectRatio = false;
+          if (requiresMutableContainers(cfg)) chartCfg = mutableContainers(cfg);
+          chartCfg.options = chartCfg.options || {};
+          chartCfg.options.responsive = true;
+          chartCfg.options.maintainAspectRatio = false;
         }
       } catch (e) {
-        // Chart.js also normalizes its config, so passing the original frozen
-        // object can fail inside Chart.js. Clone only on mutation failure.
+        // Chart.js normalizes config/data/datasets/options in place. Rebuild all
+        // plain object/array containers as writable, while retaining functions,
+        // canvases, typed arrays, plugin instances and other identity leaves.
         try {
-          chartCfg = Object.assign(Object.create(Object.getPrototypeOf(cfg)), cfg);
-          chartCfg.options = Object.assign(
-            Object.create(cfg.options ? Object.getPrototypeOf(cfg.options) : Object.prototype),
-            cfg.options || {}
-          );
+          chartCfg = mutableContainers(cfg);
+          chartCfg.options = chartCfg.options || {};
           chartCfg.options.responsive = true;
           chartCfg.options.maintainAspectRatio = false;
         } catch (cloneError) {
           chartCfg = cfg;
         }
       }
-      var inst = new C(item, chartCfg);
+      var inst;
+      try {
+        inst = new C(item, chartCfg);
+      } catch (constructError) {
+        // Last resort: never let our clone be the reason a viable original
+        // config blanks. If the original also throws, it failed independently.
+        if (chartCfg === cfg) throw constructError;
+        inst = new C(item, cfg);
+      }
       // The wrapper class may land after construction; re-measure once.
       setTimeout(function () { try { inst.resize(); } catch (e) {} }, 0);
       return inst;
