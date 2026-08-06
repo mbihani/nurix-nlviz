@@ -98,6 +98,7 @@ export function ChatPanel({
             onPin={onPinChart}
             onPinChartEvent={onPinChartEvent}
             isPinned={pinnedIds.has(msg.id)}
+            pinnedIds={pinnedIds}
             sessionId={sessionId}
           />
         ))}
@@ -193,10 +194,12 @@ function MultiChartCard({
   chartEvent,
   sessionId,
   onPin,
+  isPinned,
 }: {
   chartEvent: ChartEvent;
   sessionId: string;
   onPin: () => void;
+  isPinned: boolean;
 }) {
   const [refineOpen, setRefineOpen] = useState(false);
   const [refineInput, setRefineInput] = useState('');
@@ -280,8 +283,12 @@ function MultiChartCard({
           ✏️ Refine
         </button>
         <button type="button" onClick={onPin}
-          style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', color: '#818CF8', borderRadius: '6px', fontSize: '11px', padding: '3px 8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-          📌 Pin
+          style={
+            isPinned
+              ? { background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.25)', color: '#22C55E', borderRadius: '6px', fontSize: '11px', padding: '3px 8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }
+              : { background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', color: '#818CF8', borderRadius: '6px', fontSize: '11px', padding: '3px 8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }
+          }>
+          📌 {isPinned ? 'Pinned ✓' : 'Pin'}
         </button>
       </div>
     </div>
@@ -293,12 +300,14 @@ function MessageBubble({
   onPin,
   onPinChartEvent,
   isPinned,
+  pinnedIds,
   sessionId,
 }: {
   msg: Message;
   onPin: (msg: Message) => void;
   onPinChartEvent?: (msg: Message, event: ChartEvent, idx: number) => void;
   isPinned: boolean;
+  pinnedIds: Set<string>;
   sessionId: string;
 }) {
   const [sqlOpen, setSqlOpen] = useState(false);
@@ -379,6 +388,12 @@ function MessageBubble({
     ...msg,
     chart: msg.chart ? { ...msg.chart, html: currentHtml ?? msg.chart.html } : msg.chart,
   };
+  const visibleCharts = (msg.charts ?? [])
+    .map((chartEvent, idx) => ({ chartEvent, idx }))
+    .filter((entry): entry is { chartEvent: ChartEvent; idx: number } => Boolean(entry.chartEvent));
+  const missingChartCount = msg.announcedChartTotal
+    ? msg.announcedChartTotal - visibleCharts.length
+    : 0;
 
   return (
     <div className="flex flex-col gap-2">
@@ -441,20 +456,28 @@ function MessageBubble({
       )}
 
       {/* Multi-chart grid */}
-      {msg.charts && msg.charts.filter((chart): chart is ChartEvent => Boolean(chart)).length > 0 && (
-        <div className="grid grid-cols-2 gap-2">
-          {msg.charts
-            .map((chartEvent, idx) => ({ chartEvent, idx }))
-            .filter((entry): entry is { chartEvent: ChartEvent; idx: number } => Boolean(entry.chartEvent))
-            .map(({ chartEvent, idx }) => (
+      {visibleCharts.length > 0 && (
+        <>
+          {!msg.isLoading && missingChartCount > 0 && (
+            <p style={{ color: '#8B8BA0', fontSize: '11px', margin: 0 }}>
+              Showing {visibleCharts.length} of {msg.announcedChartTotal} charts — {missingChartCount} did not load.
+            </p>
+          )}
+          {!msg.isLoading && msg.chartOrderingWarning && (
+            <p style={{ color: '#8B8BA0', fontSize: '11px', margin: 0 }}>{msg.chartOrderingWarning}</p>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            {visibleCharts.map(({ chartEvent, idx }) => (
             <MultiChartCard
               key={idx}
               chartEvent={chartEvent}
               sessionId={sessionId}
               onPin={() => onPinChartEvent ? onPinChartEvent(msg, chartEvent, idx) : onPin({ ...msg, chart: chartEvent })}
+              isPinned={pinnedIds.has(`${msg.id}:${idx}`)}
             />
             ))}
-        </div>
+          </div>
+        </>
       )}
 
       {/* Single Chart */}

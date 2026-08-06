@@ -30,7 +30,9 @@ export type Message = {
   genie_text?: string;
   sql?: string;
   chart?: ChartEvent;
-  charts?: ChartEvent[];
+  charts?: (ChartEvent | undefined)[];
+  announcedChartTotal?: number;
+  chartOrderingWarning?: string;
   columns?: { name: string; type: string }[];
   rows?: unknown[][];
   isLoading?: boolean;
@@ -168,8 +170,21 @@ function handleSSEEvent(
           const isMulti = typeof chartTotal === 'number' && chartTotal > 1;
           if (isMulti) {
             const charts = [...(m.charts ?? [])];
-            charts[chartIndex ?? charts.length] = event;
-            return { ...m, charts, content: m.content || '', thinking: undefined };
+            let chartOrderingWarning = m.chartOrderingWarning;
+            if (chartIndex === undefined || charts[chartIndex]) {
+              charts.push(event);
+              chartOrderingWarning = 'Some charts arrived without a unique position; all available charts are shown.';
+            } else {
+              charts[chartIndex] = event;
+            }
+            return {
+              ...m,
+              charts,
+              announcedChartTotal: chartTotal,
+              chartOrderingWarning,
+              content: m.content || '',
+              thinking: undefined,
+            };
           }
           return {
             ...m,
