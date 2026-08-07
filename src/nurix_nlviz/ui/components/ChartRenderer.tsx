@@ -15,9 +15,11 @@ interface ChartRendererProps {
    * topped by a redundant second header.
    */
   hideTitle?: boolean;
+  /** Temporarily let a captured card gesture pass over the iframe uninterrupted. */
+  isInteracting?: boolean;
 }
 
-export function ChartRenderer({ html, height = '100%', title = 'Visualization', hideTitle = false }: ChartRendererProps) {
+export function ChartRenderer({ html, height = '100%', title = 'Visualization', hideTitle = false, isInteracting = false }: ChartRendererProps) {
   // Inject the fit chrome (viewport-locked CSS + Chart.js option patch) so the
   // chart scales to the box and never scrolls. Done here rather than in the
   // agent so charts already stored in Lakebase are fixed on render.
@@ -42,6 +44,7 @@ export function ChartRenderer({ html, height = '100%', title = 'Visualization', 
         border: 'none',
         background: 'transparent',
         overflow: 'hidden',
+        pointerEvents: isInteracting ? 'none' : 'auto',
       }}
       title={title}
     />

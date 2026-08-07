@@ -52,7 +52,13 @@ body > header > h1, body > header > h2, body > header > h3,
 body > header > h4, body > header > h5, body > header > h6,
 body > div:first-child > h1:only-child, body > div:first-child > h2:only-child,
 body > div:first-child > h3:only-child, body > div:first-child > h4:only-child,
-body > div:first-child > h5:only-child, body > div:first-child > h6:only-child {
+body > div:first-child > h5:only-child, body > div:first-child > h6:only-child,
+body > [data-nlviz-prose-scroll] > h1:first-child,
+body > [data-nlviz-prose-scroll] > h2:first-child,
+body > [data-nlviz-prose-scroll] > h3:first-child,
+body > [data-nlviz-prose-scroll] > h4:first-child,
+body > [data-nlviz-prose-scroll] > h5:first-child,
+body > [data-nlviz-prose-scroll] > h6:first-child {
   display: none !important;
 }
 `;
