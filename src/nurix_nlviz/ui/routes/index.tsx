@@ -1,10 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { Pin, MessageSquare, X, Sparkles, BarChart3 } from 'lucide-react';
 import { APP_TITLE, APP_SUBTITLE } from '../config/branding';
 import { useGenieChat, type Message, type ChartEvent } from '../hooks/useGenieChat';
 import { ChatPanel } from '../components/ChatPanel';
-import { BENTO_GRID, BENTO_GRID_WIDTH, PinnedCharts, rectsOverlap, X_STEP, Y_STEP } from '../components/PinnedCharts';
+import { BENTO_GRID, getGridMetrics, PinnedCharts, rectsOverlap, Y_STEP } from '../components/PinnedCharts';
 
 export const Route = createFileRoute('/')({
   component: App,
@@ -20,15 +20,13 @@ function getOrCreateSessionId(): string {
 const MIN_PANEL_W = 340;
 const MAX_PANEL_W = 660;
 const DEFAULT_PANEL_W = 440;
-const GRID_COLUMN = BENTO_GRID.columnWidth;
 const GRID_ROW = BENTO_GRID.rowHeight;
 const GRID_GUTTER = BENTO_GRID.gutter;
-const GRID_X_STEP = X_STEP;
 const GRID_Y_STEP = Y_STEP;
 const DEFAULT_COL_SPAN = 5;
 const DEFAULT_ROW_SPAN = 5;
-const DEFAULT_CARD_W = DEFAULT_COL_SPAN * GRID_COLUMN + (DEFAULT_COL_SPAN - 1) * GRID_GUTTER;
 const DEFAULT_CARD_H = DEFAULT_ROW_SPAN * GRID_ROW + (DEFAULT_ROW_SPAN - 1) * GRID_GUTTER;
+const CANVAS_PADDING = 12;
 
 interface PinLayout { id: number; x: number; y: number; width: number; height: number }
 
@@ -41,18 +39,20 @@ interface PinLayout { id: number; x: number; y: number; width: number; height: n
  * off-screen; a card wider than the canvas still starts at x=0.
  */
 function findFreeGridSlot(pins: PinLayout[], canvasWidth: number) {
-  const maxX = Math.max(0, canvasWidth - DEFAULT_CARD_W);
-  const lastCol = Math.floor(maxX / GRID_X_STEP);
+  const { columnWidth, xStep } = getGridMetrics(canvasWidth);
+  const defaultCardW = DEFAULT_COL_SPAN * columnWidth + (DEFAULT_COL_SPAN - 1) * GRID_GUTTER;
+  const maxX = Math.max(0, canvasWidth - defaultCardW);
+  const lastCol = Math.floor(maxX / xStep);
 
   for (let row = 0; row < 200; row += 1) {
     for (let col = 0; col <= lastCol; col += 1) {
-      const candidate = { x: col * GRID_X_STEP, y: row * GRID_Y_STEP, width: DEFAULT_CARD_W, height: DEFAULT_CARD_H };
+      const candidate = { x: col * xStep, y: row * GRID_Y_STEP, width: defaultCardW, height: DEFAULT_CARD_H };
       if (!pins.some((pin) => rectsOverlap(candidate, pin))) return candidate;
     }
   }
   // Exhausted the scan — drop it below everything rather than on top of a card.
   const lowest = pins.reduce((acc, p) => Math.max(acc, p.y + p.height), 0);
-  return { x: 0, y: lowest + GRID_GUTTER, width: DEFAULT_CARD_W, height: DEFAULT_CARD_H };
+  return { x: 0, y: lowest + GRID_GUTTER, width: defaultCardW, height: DEFAULT_CARD_H };
 }
 
 function App() {
@@ -76,6 +76,21 @@ function App() {
   }, []);
 
   const canvasRef = useRef<HTMLDivElement>(null);
+  const [canvasWidth, setCanvasWidth] = useState(1);
+
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let timer = 0;
+    const measure = () => setCanvasWidth(Math.max(1, canvas.clientWidth - CANVAS_PADDING * 2));
+    measure();
+    const observer = new ResizeObserver(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(measure, 80);
+    });
+    observer.observe(canvas);
+    return () => { window.clearTimeout(timer); observer.disconnect(); };
+  }, []);
 
   useEffect(() => {
     fetch(`/api/pins?session_id=${encodeURIComponent(sessionId)}`)
@@ -89,7 +104,6 @@ function App() {
   }, [sessionId]);
 
   const doPinChart = useCallback(async (chartHtml: string, sql: string | null | undefined, question: string) => {
-    const canvasWidth = Math.min(canvasRef.current?.clientWidth ?? DEFAULT_CARD_W, BENTO_GRID_WIDTH);
     const slot = findFreeGridSlot(pinLayoutsRef.current, canvasWidth);
     try {
       const res = await fetch('/api/pins', {
@@ -102,7 +116,10 @@ function App() {
           chart_type: 'html',
           chart_config: chartHtml,
           rows_json: null,
-          ...slot,
+          x: Math.round(slot.x),
+          y: Math.round(slot.y),
+          width: Math.round(slot.width),
+          height: Math.round(slot.height),
         }),
       });
       if (!res.ok) return false;
@@ -115,7 +132,7 @@ function App() {
       if (!chatOpen) setNewPinCount(prev => prev + 1);
       return true;
     } catch { return false; }
-  }, [sessionId, chatOpen]);
+  }, [sessionId, chatOpen, canvasWidth]);
 
   const handlePinChart = useCallback((msg: Message) => {
     if (!msg.chart) return;
@@ -173,7 +190,7 @@ function App() {
       </header>
 
       {/* Canvas */}
-      <div ref={canvasRef} style={{ flex: 1, position: 'relative', overflow: 'auto', backgroundColor: '#020617', backgroundImage: 'linear-gradient(#0F172A 1px, transparent 1px), linear-gradient(90deg, #0F172A 1px, transparent 1px)', backgroundSize: `${GRID_X_STEP}px ${GRID_Y_STEP}px`, backgroundPositionX: `max(0px, calc((100% - ${BENTO_GRID_WIDTH}px) / 2))` }}>
+      <div ref={canvasRef} data-nlviz-canvas style={{ flex: 1, position: 'relative', overflowX: 'hidden', overflowY: 'auto', padding: CANVAS_PADDING, backgroundColor: '#020617', backgroundImage: 'linear-gradient(#0F172A 1px, transparent 1px), linear-gradient(90deg, #0F172A 1px, transparent 1px)', backgroundSize: `${getGridMetrics(canvasWidth).xStep}px ${GRID_Y_STEP}px` }}>
         {pinCount === 0 && (
           <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none', userSelect: 'none' }}>
             <div style={{ width: '60px', height: '60px', margin: '0 auto 20px', background: 'rgba(8,145,178,0.1)', border: '1px solid rgba(8,145,178,0.2)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -186,7 +203,7 @@ function App() {
             </button>
           </div>
         )}
-        <PinnedCharts sessionId={sessionId} refreshTrigger={pinRefresh} onLayoutsChange={handleLayoutsChange} />
+        <PinnedCharts sessionId={sessionId} canvasWidth={canvasWidth} refreshTrigger={pinRefresh} onLayoutsChange={handleLayoutsChange} />
       </div>
 
       {/* Floating Ask button */}

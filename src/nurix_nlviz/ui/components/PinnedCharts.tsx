@@ -34,6 +34,7 @@ export interface PinRect {
 
 interface PinnedChartsProps {
   sessionId: string;
+  canvasWidth: number;
   refreshTrigger?: number;
   externalHtmlOverrides?: Map<number, string>;
   /**
@@ -44,27 +45,41 @@ interface PinnedChartsProps {
   onLayoutsChange?: (rects: PinRect[]) => void;
 }
 
-export const BENTO_GRID = { columns: 13, columnWidth: 96, rowHeight: 72, gutter: 12 } as const;
-export const X_STEP = BENTO_GRID.columnWidth + BENTO_GRID.gutter;
+export const BENTO_GRID = { columns: 12, rowHeight: 72, gutter: 12 } as const;
 export const Y_STEP = BENTO_GRID.rowHeight + BENTO_GRID.gutter;
-export const BENTO_GRID_WIDTH = BENTO_GRID.columns * BENTO_GRID.columnWidth
-  + (BENTO_GRID.columns - 1) * BENTO_GRID.gutter;
-const MIN_COLS = 3;
+export const MIN_COLS = 3;
 const MIN_ROWS = 3;
-const MIN_W = MIN_COLS * BENTO_GRID.columnWidth + (MIN_COLS - 1) * BENTO_GRID.gutter;
 const MIN_H = MIN_ROWS * BENTO_GRID.rowHeight + (MIN_ROWS - 1) * BENTO_GRID.gutter;
+
+export const getGridMetrics = (width: number) => {
+  const gridWidth = Math.max(1, width);
+  const columnWidth = Math.max(1, (gridWidth - (BENTO_GRID.columns - 1) * BENTO_GRID.gutter) / BENTO_GRID.columns);
+  return { gridWidth, columnWidth, xStep: columnWidth + BENTO_GRID.gutter };
+};
 
 const snapPosition = (value: number, step: number) => Math.max(0, Math.round(value / step) * step);
 const snapSpan = (value: number, unit: number, step: number, minimum: number) => {
   const span = Math.max(minimum, Math.round((value + BENTO_GRID.gutter) / step));
   return span * unit + (span - 1) * BENTO_GRID.gutter;
 };
-const snapLayout = (layout: CardLayout): CardLayout => ({
-  x: snapPosition(layout.x, X_STEP),
+const snapLayout = (layout: CardLayout, gridWidth: number): CardLayout => {
+  const { columnWidth, xStep } = getGridMetrics(gridWidth);
+  const colSpan = Math.min(BENTO_GRID.columns, Math.max(MIN_COLS, Math.round((layout.width + BENTO_GRID.gutter) / xStep)));
+  const col = Math.min(BENTO_GRID.columns - colSpan, Math.max(0, Math.round(layout.x / xStep)));
+  return {
+  x: col * xStep,
   y: snapPosition(layout.y, Y_STEP),
-  width: snapSpan(layout.width, BENTO_GRID.columnWidth, X_STEP, MIN_COLS),
+  width: colSpan * columnWidth + (colSpan - 1) * BENTO_GRID.gutter,
   height: snapSpan(layout.height, BENTO_GRID.rowHeight, Y_STEP, MIN_ROWS),
-});
+  };
+};
+
+const reflowLayout = (layout: CardLayout, oldWidth: number, newWidth: number) => {
+  const oldGrid = getGridMetrics(oldWidth);
+  const col = Math.round(layout.x / oldGrid.xStep);
+  const colSpan = Math.min(BENTO_GRID.columns, Math.max(MIN_COLS, Math.round((layout.width + BENTO_GRID.gutter) / oldGrid.xStep)));
+  return snapLayout({ ...layout, x: col * getGridMetrics(newWidth).xStep, width: colSpan * getGridMetrics(newWidth).columnWidth + (colSpan - 1) * BENTO_GRID.gutter }, newWidth);
+};
 
 export const rectsOverlap = (a: Omit<PinRect, 'id'> | PinRect, b: PinRect) => !(
   a.x + a.width + BENTO_GRID.gutter <= b.x ||
@@ -74,9 +89,10 @@ export const rectsOverlap = (a: Omit<PinRect, 'id'> | PinRect, b: PinRect) => !(
 );
 
 /** Find the closest collision-free grid point, expanding in Manhattan rings. */
-const nearestFreeLayout = (layout: CardLayout, occupied: PinRect[]): CardLayout => {
+const nearestFreeLayout = (layout: CardLayout, occupied: PinRect[], gridWidth: number): CardLayout => {
+  const { xStep } = getGridMetrics(gridWidth);
   if (!occupied.some((rect) => rectsOverlap(layout, rect))) return layout;
-  const startCol = Math.round(layout.x / X_STEP);
+  const startCol = Math.round(layout.x / xStep);
   const startRow = Math.round(layout.y / Y_STEP);
   for (let radius = 1; radius < 200; radius += 1) {
     for (let dy = -radius; dy <= radius; dy += 1) {
@@ -86,8 +102,8 @@ const nearestFreeLayout = (layout: CardLayout, occupied: PinRect[]): CardLayout 
         [startCol + dx, startRow + dy],
       ];
       for (const [col, row] of candidates) {
-        if (col < 0 || row < 0 || col * X_STEP + layout.width > BENTO_GRID_WIDTH) continue;
-        const candidate = { ...layout, x: col * X_STEP, y: row * Y_STEP };
+        if (col < 0 || row < 0 || col * xStep + layout.width > gridWidth + 0.5) continue;
+        const candidate = { ...layout, x: col * xStep, y: row * Y_STEP };
         if (!occupied.some((rect) => rectsOverlap(candidate, rect))) return candidate;
       }
     }
@@ -113,7 +129,7 @@ const zForStackIndex = (index: number, total: number) => {
   return BASE_Z + Math.max(0, MAX_Z_LEVELS - fromFront);
 };
 
-export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides, onLayoutsChange }: PinnedChartsProps) {
+export function PinnedCharts({ sessionId, canvasWidth, refreshTrigger, externalHtmlOverrides, onLayoutsChange }: PinnedChartsProps) {
   const [pins, setPins] = useState<PinnedChart[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<PinnedChart | null>(null);
@@ -122,6 +138,10 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides,
   const [refineInput, setRefineInput] = useState('');
   const [isRefining, setIsRefining] = useState(false);
   const [refineError, setRefineError] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const previousCanvasWidth = useRef(canvasWidth);
+  const canvasWidthRef = useRef(canvasWidth);
+  canvasWidthRef.current = canvasWidth;
   const refineInputRef = useRef<HTMLInputElement>(null);
 
   // Client-side stacking order, back-to-front. There is no z/order column on
@@ -145,10 +165,13 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides,
         setPins(data);
         setCardLayouts((prev) => {
           const next = new Map(prev);
+          const occupied: PinRect[] = [];
           data.forEach((p) => {
             if (!next.has(p.id)) {
-              next.set(p.id, snapLayout({ x: p.x ?? 0, y: p.y ?? 0, width: p.width ?? 528, height: p.height ?? 408 }));
+              const snapped = snapLayout({ x: p.x ?? 0, y: p.y ?? 0, width: p.width ?? 528, height: p.height ?? 408 }, canvasWidthRef.current);
+              next.set(p.id, nearestFreeLayout(snapped, occupied, canvasWidthRef.current));
             }
+            occupied.push({ id: p.id, ...(next.get(p.id) as CardLayout) });
           });
           return next;
         });
@@ -159,6 +182,24 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides,
       setLoading(false);
     }
   }, [sessionId]);
+
+  useEffect(() => {
+    const oldWidth = previousCanvasWidth.current;
+    if (canvasWidth <= 0 || oldWidth <= 0 || Math.abs(canvasWidth - oldWidth) < 1) return;
+    setCardLayouts((prev) => {
+      const next = new Map<number, CardLayout>();
+      const occupied: PinRect[] = [];
+      pins.forEach((pin) => {
+        const current = prev.get(pin.id) ?? snapLayout(pin, oldWidth);
+        const flowed = reflowLayout(current, oldWidth, canvasWidth);
+        const resolved = nearestFreeLayout(flowed, occupied, canvasWidth);
+        next.set(pin.id, resolved);
+        occupied.push({ id: pin.id, ...resolved });
+      });
+      return next;
+    });
+    previousCanvasWidth.current = canvasWidth;
+  }, [canvasWidth, pins]);
 
   useEffect(() => {
     loadPins();
@@ -190,7 +231,12 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides,
       await fetch(`/api/pins/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ x: layout.x, y: layout.y, width: layout.width, height: layout.height }),
+        body: JSON.stringify({
+          x: Math.round(layout.x),
+          y: Math.round(layout.y),
+          width: Math.round(layout.width),
+          height: Math.round(layout.height),
+        }),
       });
     } catch {
       // non-critical
@@ -198,8 +244,10 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides,
   }, []);
 
   const handleDelete = async (id: number) => {
+    setDeleteError('');
     try {
-      await fetch(`/api/pins/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/pins/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`Delete failed (${res.status})`);
       setPins((prev) => prev.filter((p) => p.id !== id));
       setCardLayouts((prev) => {
         const next = new Map(prev);
@@ -208,7 +256,7 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides,
       });
       if (expanded?.id === id) setExpanded(null);
     } catch {
-      // ignore
+      setDeleteError('Could not delete this visualization. Please try again.');
     }
   };
 
@@ -250,7 +298,7 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides,
   }, [refiningPin, refineInput, isRefining, sessionId]);
 
   const getLayout = (pin: PinnedChart): CardLayout =>
-    cardLayouts.get(pin.id) ?? snapLayout({ x: pin.x ?? 0, y: pin.y ?? 0, width: pin.width ?? 528, height: pin.height ?? 408 });
+    cardLayouts.get(pin.id) ?? snapLayout({ x: pin.x ?? 0, y: pin.y ?? 0, width: pin.width ?? 528, height: pin.height ?? 408 }, canvasWidth);
 
   if (loading && pins.length === 0) {
     return (
@@ -272,7 +320,7 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides,
     <>
       <div
         className="relative w-full"
-        style={{ width: BENTO_GRID_WIDTH, minWidth: BENTO_GRID_WIDTH, margin: '0 auto', minHeight: `max(80vh, ${canvasMinH}px)` }}
+        style={{ width: '100%', minHeight: `max(80vh, ${canvasMinH}px)` }}
       >
         {pins.map((pin, idx) => {
           const overrideHtml = externalHtmlOverrides?.get(pin.id);
@@ -281,13 +329,14 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides,
               key={pin.id}
               pin={overrideHtml ? { ...pin, chart_config: overrideHtml } : pin}
               layout={getLayout(pin)}
+              canvasWidth={canvasWidth}
               animationDelay={idx * 60}
               zIndex={zForStackIndex(stack.indexOf(pin.id), stack.length)}
               onActivate={() => bringToFront(pin.id)}
               onLayoutChange={(l) => setCardLayouts((prev) => new Map(prev).set(pin.id, l))}
               onLayoutCommit={(l, avoidCollisions) => {
                 const occupied = pins.filter((other) => other.id !== pin.id).map((other) => ({ id: other.id, ...getLayout(other) }));
-                const resolved = avoidCollisions ? nearestFreeLayout(l, occupied) : l;
+                const resolved = avoidCollisions ? nearestFreeLayout(l, occupied, canvasWidth) : l;
                 setCardLayouts((prev) => new Map(prev).set(pin.id, resolved));
                 persistLayout(pin.id, resolved);
               }}
@@ -298,6 +347,8 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides,
           );
         })}
       </div>
+
+      {deleteError && <div role="alert" style={{ position: 'fixed', left: 12, bottom: 12, zIndex: 39, background: '#0F172A', border: '1px solid #1E293B', color: '#FFFFFF', padding: '8px 12px', borderRadius: 6 }}>{deleteError}</div>}
 
       {/* Refine modal */}
       {refiningPin && (
@@ -394,6 +445,7 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides,
 interface DraggableCardProps {
   pin: PinnedChart;
   layout: CardLayout;
+  canvasWidth: number;
   animationDelay?: number;
   zIndex: number;
   /** Raise this card above its neighbours (drag start, resize start, any click). */
@@ -408,6 +460,7 @@ interface DraggableCardProps {
 function DraggableCard({
   pin,
   layout,
+  canvasWidth,
   animationDelay = 0,
   zIndex,
   onActivate,
@@ -417,6 +470,8 @@ function DraggableCard({
   onExpand,
   onRefine,
 }: DraggableCardProps) {
+  const { columnWidth } = getGridMetrics(canvasWidth);
+  const minWidth = MIN_COLS * columnWidth + (MIN_COLS - 1) * BENTO_GRID.gutter;
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
 
@@ -430,6 +485,7 @@ function DraggableCard({
   }, []);
 
   const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('button')) return;
     e.preventDefault();
     onActivate();
     const handle = e.currentTarget;
@@ -461,7 +517,7 @@ function DraggableCard({
       removeListeners();
       cleanupRef.current = null;
       setIsInteracting(false);
-      const snapped = snapLayout(liveLayout);
+      const snapped = snapLayout(liveLayout, canvasWidth);
       onLayoutChange(snapped);
       onLayoutCommit(snapped, true);
     };
@@ -489,7 +545,7 @@ function DraggableCard({
     let liveLayout = layoutRef.current;
     const onMove = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;
-      const nw = Math.max(MIN_W, origW + ev.clientX - startX);
+      const nw = Math.max(minWidth, origW + ev.clientX - startX);
       const nh = Math.max(MIN_H, origH + ev.clientY - startY);
       liveLayout = { ...liveLayout, width: nw, height: nh };
       layoutRef.current = liveLayout;
@@ -506,7 +562,7 @@ function DraggableCard({
       removeListeners();
       cleanupRef.current = null;
       setIsInteracting(false);
-      const snapped = snapLayout(liveLayout);
+      const snapped = snapLayout(liveLayout, canvasWidth);
       onLayoutChange(snapped);
       onLayoutCommit(snapped, false);
     };
@@ -539,7 +595,7 @@ function DraggableCard({
         top: layout.y,
         width: layout.width,
         height: layout.height,
-        minWidth: MIN_W,
+        minWidth,
         minHeight: MIN_H,
         background: '#0F172A',
         border: '1px solid #1E293B',
@@ -567,7 +623,7 @@ function DraggableCard({
         <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>
           {pin.question}
         </p>
-        <div className="flex gap-1 shrink-0" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="flex gap-1 shrink-0" onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
           <button type="button" onClick={onExpand} style={actionBtnStyle} title="Expand">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
