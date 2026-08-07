@@ -138,7 +138,7 @@ function App() {
     if (!msg.chart) return;
     // Use msg.id as the key to prevent double-pinning
     if (pinnedMsgIds.has(msg.id)) return;
-    doPinChart(msg.chart.html, msg.sql, msg.content || msg.chart.title || 'Chart');
+    doPinChart(msg.chart.html, msg.sql, msg.content || msg.chart.title || 'Visualization');
     setPinnedMsgIds(prev => new Set([...prev, msg.id]));
   }, [doPinChart, pinnedMsgIds]);
 
@@ -146,7 +146,7 @@ function App() {
     // Compose a per-chart key so each chart in a multi-chart message can pin once
     const key = `${msg.id}:${idx}`;
     if (pinnedMsgIds.has(key)) return;
-    doPinChart(event.html, msg.sql, msg.content || event.title || 'Chart');
+    doPinChart(event.html, msg.sql, msg.content || event.title || 'Visualization');
     setPinnedMsgIds(prev => new Set([...prev, key]));
   }, [doPinChart, pinnedMsgIds]);
 

@@ -19,14 +19,14 @@
  */
 
 const FIT_STYLE = `
-html, body {
+html, html body {
   margin: 0 !important;
   padding: 0 !important;
   width: 100% !important;
   height: 100% !important;
   max-height: 100% !important;
   overflow: hidden !important;
-  background: transparent !important;
+  background: #020617 !important;
 }
 *, *::before, *::after { box-sizing: border-box; }
 body { display: flex !important; flex-direction: column !important; }

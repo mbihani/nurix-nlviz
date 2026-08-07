@@ -42,7 +42,7 @@ export function ChartRenderer({ html, height = '100%', title = 'Visualization', 
         height,
         display: 'block',
         border: 'none',
-        background: 'transparent',
+        background: '#020617',
         overflow: 'hidden',
         pointerEvents: isInteracting ? 'none' : 'auto',
       }}

@@ -401,7 +401,7 @@ export function PinnedCharts({ sessionId, canvasWidth, refreshTrigger, externalH
         >
           <div
             className="p-6"
-            style={{ background: '#0F172A', border: '1px solid rgba(8,145,178,0.25)', borderRadius: '8px', width: '90vw', maxWidth: '900px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+            style={{ background: '#020617', border: '1px solid rgba(8,145,178,0.25)', borderRadius: '8px', width: '90vw', maxWidth: '900px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-4">
@@ -477,6 +477,7 @@ function DraggableCard({
 
   const cleanupRef = useRef<(() => void) | null>(null);
   const [isInteracting, setIsInteracting] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -589,6 +590,8 @@ function DraggableCard({
   return (
     <div
       className="flex flex-col select-none animate-fade-in-up"
+      data-nlviz-pinned-card
+      title={pin.question}
       style={{
         position: 'absolute',
         left: layout.x,
@@ -597,7 +600,7 @@ function DraggableCard({
         height: layout.height,
         minWidth,
         minHeight: MIN_H,
-        background: '#0F172A',
+        background: '#020617',
         border: '1px solid #1E293B',
         boxShadow: 'none',
         borderRadius: '8px',
@@ -607,23 +610,42 @@ function DraggableCard({
         zIndex,
       }}
       onMouseDownCapture={onActivate}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Drag handle header */}
+      {/* Transparent top drag zone: above the iframe, below card controls. */}
       <div
-        className="flex items-center justify-between shrink-0"
+        data-nlviz-drag-zone
         style={{
-          background: '#0F172A',
-          borderBottom: '1px solid #1E293B',
-          padding: '7px 10px',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 28,
           cursor: 'grab',
-          height: '34px',
+          zIndex: 8,
+          borderTop: isHovered ? '1px solid #334155' : '1px solid transparent',
+          transition: 'border-color 0.15s',
         }}
         onPointerDown={startDrag}
+      />
+
+      {/* Actions float over the visualization and never intercept input at rest. */}
+      <div
+        data-nlviz-hover-actions
+        className="flex gap-1 shrink-0"
+        style={{
+          position: 'absolute',
+          top: 6,
+          right: 6,
+          zIndex: 9,
+          opacity: isHovered ? 1 : 0,
+          pointerEvents: isHovered ? 'auto' : 'none',
+          transition: 'opacity 0.15s',
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
-        <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>
-          {pin.question}
-        </p>
-        <div className="flex gap-1 shrink-0" onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
           <button type="button" onClick={onExpand} style={actionBtnStyle} title="Expand">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
@@ -640,13 +662,10 @@ function DraggableCard({
           >
             <Trash2 size={11} />
           </button>
-        </div>
       </div>
 
-      {/* Chart content — borderless, flush to the card, fills remaining space.
-          No padding/border/background here: the chart auto-fits this box and the
-          card's own drag header above is the only chrome. */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      {/* Chart content — borderless and flush to every edge of the card. */}
+      <div data-nlviz-chart-content className="flex-1 min-h-0 overflow-hidden">
         {pin.chart_config ? (
           <ChartRenderer html={pin.chart_config as string} title={pin.question} hideTitle isInteracting={isInteracting} />
         ) : (
