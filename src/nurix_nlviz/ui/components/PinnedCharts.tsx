@@ -401,7 +401,7 @@ export function PinnedCharts({ sessionId, canvasWidth, refreshTrigger, externalH
         >
           <div
             className="p-6"
-            style={{ background: '#020617', border: '1px solid #131C2E', borderRadius: '8px', width: '90vw', maxWidth: '900px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+            style={{ background: '#020617', border: '1px solid #1E293B', borderRadius: '8px', width: '90vw', maxWidth: '900px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-4">
@@ -601,7 +601,7 @@ function DraggableCard({
         minWidth,
         minHeight: MIN_H,
         background: '#020617',
-        border: '1px solid #131C2E',
+        border: '1px solid #1E293B',
         boxShadow: 'none',
         borderRadius: '8px',
         overflow: 'hidden',
