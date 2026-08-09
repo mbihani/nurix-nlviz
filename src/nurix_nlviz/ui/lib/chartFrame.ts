@@ -33,9 +33,17 @@ body { display: flex !important; flex-direction: column !important; }
 body > * { flex: 0 0 auto; min-width: 0; }
 h1, h2, h3, h4, h5, h6 { margin: 0 0 4px !important; line-height: 1.25 !important; }
 p { margin: 0 0 4px !important; }
-canvas { display: block !important; max-width: 100% !important; }
+canvas {
+  display: block !important;
+  max-width: 100% !important;
+  height: calc(100% - 4px) !important;
+}
 /* Applied by the fit script to the body-level ancestor of fitted content. */
-.nlviz-fill { flex: 1 1 auto !important; min-height: 0 !important; position: relative !important; }
+.nlviz-fill {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  position: relative !important;
+}
 .nlviz-scroll { overflow: auto !important; }
 .nlviz-scroll > table { width: 100%; }
 table { max-width: 100%; }
@@ -213,6 +221,18 @@ const FIT_SCRIPT = `
 
   function fit() {
     if (!document.body) return;
+    // Old generated documents may paint the former card surface on arbitrary
+    // descendants (including inline !important declarations). Normalize only
+    // that exact legacy color; data swatches and intentional surfaces survive.
+    var elements = document.body.getElementsByTagName('*');
+    for (var surfaceIndex = 0; surfaceIndex < elements.length; surfaceIndex++) {
+      var surface = elements[surfaceIndex];
+      try {
+        if (getComputedStyle(surface).backgroundColor === 'rgb(15, 23, 42)') {
+          surface.style.setProperty('background-color', '#020617', 'important');
+        }
+      } catch (e) {}
+    }
     var canvases = document.getElementsByTagName('canvas');
     var prose = document.querySelector('[data-nlviz-prose-scroll]');
     if (canvases.length && prose) prose.classList.remove(FILL, SCROLL);

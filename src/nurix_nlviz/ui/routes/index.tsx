@@ -190,7 +190,7 @@ function App() {
       </header>
 
       {/* Canvas */}
-      <div ref={canvasRef} data-nlviz-canvas style={{ flex: 1, position: 'relative', overflowX: 'hidden', overflowY: 'auto', padding: CANVAS_PADDING, backgroundColor: '#020617', backgroundImage: 'linear-gradient(#0F172A 1px, transparent 1px), linear-gradient(90deg, #0F172A 1px, transparent 1px)', backgroundSize: `${getGridMetrics(canvasWidth).xStep}px ${GRID_Y_STEP}px` }}>
+      <div ref={canvasRef} data-nlviz-canvas style={{ flex: 1, position: 'relative', overflowX: 'hidden', overflowY: 'auto', padding: CANVAS_PADDING, backgroundColor: '#020617' }}>
         {pinCount === 0 && (
           <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none', userSelect: 'none' }}>
             <div style={{ width: '60px', height: '60px', margin: '0 auto 20px', background: 'rgba(8,145,178,0.1)', border: '1px solid rgba(8,145,178,0.2)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
