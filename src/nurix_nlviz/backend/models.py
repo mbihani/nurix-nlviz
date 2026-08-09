@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PinIn(BaseModel):
@@ -47,6 +47,13 @@ class RefineRequest(BaseModel):
     chart_html: str
     refine_instruction: str
     columns: list[dict] | None = None
+
+
+class AskAboutVizRequest(BaseModel):
+    session_id: str
+    chart_html: str = Field(max_length=100000)
+    sql: str = Field(min_length=1, max_length=10000)
+    question: str = Field(min_length=1, max_length=2000)
 
 
 class FilterEntry(BaseModel):

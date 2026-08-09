@@ -1,6 +1,13 @@
 import { useQuery, useSuspenseQuery, useMutation } from "@tanstack/react-query";
 import type { UseQueryOptions, UseSuspenseQueryOptions, UseMutationOptions } from "@tanstack/react-query";
 
+export interface AskAboutVizRequest {
+  chart_html: string;
+  question: string;
+  session_id: string;
+  sql: string;
+}
+
 export interface ChatRequest {
   deep_research?: boolean;
   question: string;
@@ -103,6 +110,21 @@ export class ApiError extends Error {
     this.statusText = statusText;
     this.body = body;
   }
+}
+
+export const askAboutViz = async (data: AskAboutVizRequest, options?: RequestInit): Promise<{ data: unknown }> => {
+  const res = await fetch("/api/ask_about_viz", { ...options, method: "POST", headers: { "Content-Type": "application/json", ...options?.headers }, body: JSON.stringify(data) });
+  if (!res.ok) {
+    const body = await res.text();
+    let parsed: unknown;
+    try { parsed = JSON.parse(body); } catch { parsed = body; }
+    throw new ApiError(res.status, res.statusText, parsed);
+  }
+  return { data: await res.json() };
+};
+
+export function useAskAboutViz(options?: { mutation?: UseMutationOptions<{ data: unknown }, ApiError, AskAboutVizRequest> }) {
+  return useMutation({ mutationFn: (data) => askAboutViz(data), ...options?.mutation });
 }
 
 export const chat = async (data: ChatRequest, options?: RequestInit): Promise<{ data: unknown }> => {

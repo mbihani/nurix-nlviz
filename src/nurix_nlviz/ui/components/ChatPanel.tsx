@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Square, Database, ChevronDown, ChevronUp, Sparkles, Microscope } from 'lucide-react';
+import { Send, Square, Database, ChevronDown, ChevronUp, Sparkles, Microscope, X } from 'lucide-react';
 import type { Message, ChartEvent } from '../hooks/useGenieChat';
+import type { AskAboutVizTarget } from './PinnedCharts';
 import { ChartRenderer } from './ChartRenderer';
 import { MarkdownText } from './MarkdownText';
 
@@ -19,6 +20,9 @@ interface ChatPanelProps {
   onPinChartEvent?: (msg: Message, event: ChartEvent, idx: number) => void;
   pinnedIds: Set<string>;
   sessionId: string;
+  askAboutVizTarget?: AskAboutVizTarget | null;
+  onAskAboutViz?: (question: string) => void;
+  onCancelAskAboutViz?: () => void;
 }
 
 export function ChatPanel({
@@ -30,11 +34,17 @@ export function ChatPanel({
   onPinChartEvent,
   pinnedIds,
   sessionId,
+  askAboutVizTarget,
+  onAskAboutViz,
+  onCancelAskAboutViz,
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [deepResearch, setDeepResearch] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const askInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (askAboutVizTarget) askInputRef.current?.focus(); }, [askAboutVizTarget]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -107,6 +117,29 @@ export function ChatPanel({
 
       {/* Input bar */}
       <div className="p-3" style={{ borderTop: '1px solid rgba(8,145,178,0.12)' }}>
+        {askAboutVizTarget && (
+          <form
+            data-nlviz-ask-about-viz-composer
+            onSubmit={(e) => { e.preventDefault(); const q = input.trim(); if (q && !isStreaming) { setInput(''); onAskAboutViz?.(q); } }}
+            style={{ background: 'rgba(8,145,178,0.08)', border: '1px solid rgba(8,145,178,0.25)', borderRadius: 8, padding: 10, marginBottom: 10 }}
+          >
+            <div className="flex items-center justify-between gap-2 mb-2" style={{ color: '#94A3B8', fontSize: 11 }}>
+              <span>Ask about “{askAboutVizTarget.title}”</span>
+              <button type="button" aria-label="Cancel visualisation question" onClick={() => { setInput(''); onCancelAskAboutViz?.(); }} style={{ background: 'transparent', border: 0, color: '#64748B', cursor: 'pointer' }}><X size={13} /></button>
+            </div>
+            <input
+              ref={askInputRef}
+              value={input}
+              maxLength={2000}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); setInput(''); onCancelAskAboutViz?.(); } }}
+              placeholder="What would you like to know about this visualisation?"
+              disabled={isStreaming}
+              style={{ width: '100%', background: '#0F172A', border: '1px solid rgba(8,145,178,0.25)', borderRadius: 6, color: '#FFFFFF', fontSize: 13, padding: '8px 10px', outline: 'none' }}
+            />
+          </form>
+        )}
+        {!askAboutVizTarget && <>
         <div className="mb-2 flex items-center gap-2 min-h-[28px]">
           <button
             type="button"
@@ -185,6 +218,7 @@ export function ChatPanel({
             </button>
           )}
         </form>
+        </>}
       </div>
     </div>
   );
@@ -561,11 +595,11 @@ function MessageBubble({
       )}
 
       {/* Text answer — suppress generic filler when a chart is present */}
-      {msg.content && !msg.isLoading && !msg.chart && !(msg.charts && msg.charts.length > 0) && (
+      {msg.content && !msg.chart && !(msg.charts && msg.charts.length > 0) && (
         <div
           style={{ background: '#0F172A', border: '1px solid rgba(8,145,178,0.15)', borderRadius: '4px 8px 8px 8px', padding: '10px 14px', fontSize: '13px', color: '#FFFFFF', maxWidth: '95%' }}
         >
-          {msg.content}
+          <MarkdownText text={msg.content} />
         </div>
       )}
     </div>

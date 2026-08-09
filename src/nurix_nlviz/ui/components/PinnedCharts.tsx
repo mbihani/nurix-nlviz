@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Trash2, X, Pencil } from 'lucide-react';
+import { Trash2, X, Pencil, MessageCircleQuestion } from 'lucide-react';
 import { ChartRenderer } from './ChartRenderer';
 
 interface PinnedChart {
@@ -16,6 +16,12 @@ interface PinnedChart {
   width: number;
   height: number;
 }
+
+export type AskAboutVizTarget = {
+  title: string;
+  chartHtml: string;
+  sql?: string;
+};
 
 interface CardLayout {
   x: number;
@@ -43,6 +49,7 @@ interface PinnedChartsProps {
    * than against a stale snapshot.
    */
   onLayoutsChange?: (rects: PinRect[]) => void;
+  onAskAboutViz?: (target: AskAboutVizTarget) => void;
 }
 
 export const BENTO_GRID = { columns: 12, rowHeight: 72, gutter: 12 } as const;
@@ -129,7 +136,7 @@ const zForStackIndex = (index: number, total: number) => {
   return BASE_Z + Math.max(0, MAX_Z_LEVELS - fromFront);
 };
 
-export function PinnedCharts({ sessionId, canvasWidth, refreshTrigger, externalHtmlOverrides, onLayoutsChange }: PinnedChartsProps) {
+export function PinnedCharts({ sessionId, canvasWidth, refreshTrigger, externalHtmlOverrides, onLayoutsChange, onAskAboutViz }: PinnedChartsProps) {
   const [pins, setPins] = useState<PinnedChart[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<PinnedChart | null>(null);
@@ -343,6 +350,7 @@ export function PinnedCharts({ sessionId, canvasWidth, refreshTrigger, externalH
               onDelete={() => handleDelete(pin.id)}
               onExpand={() => setExpanded(pin)}
               onRefine={(id, html) => { setRefiningPin({ id, html }); setRefineInput(''); setRefineError(''); }}
+              onAskAboutViz={() => onAskAboutViz?.({ title: pin.question || 'Visualisation', chartHtml: overrideHtml ?? pin.chart_config, sql: pin.sql_query })}
             />
           );
         })}
@@ -455,6 +463,7 @@ interface DraggableCardProps {
   onDelete: () => void;
   onExpand: () => void;
   onRefine: (pinId: number, currentHtml: string) => void;
+  onAskAboutViz: () => void;
 }
 
 function DraggableCard({
@@ -469,6 +478,7 @@ function DraggableCard({
   onDelete,
   onExpand,
   onRefine,
+  onAskAboutViz,
 }: DraggableCardProps) {
   const { columnWidth } = getGridMetrics(canvasWidth);
   const minWidth = MIN_COLS * columnWidth + (MIN_COLS - 1) * BENTO_GRID.gutter;
@@ -653,6 +663,9 @@ function DraggableCard({
           </button>
           <button type="button" onClick={() => onRefine(pin.id, pin.chart_config)} style={actionBtnStyle} title="Refine chart">
             <Pencil size={11} />
+          </button>
+          <button type="button" onClick={onAskAboutViz} style={actionBtnStyle} title="Ask about this visualisation" aria-label="Ask about this visualisation">
+            <MessageCircleQuestion size={11} />
           </button>
           <button
             type="button"

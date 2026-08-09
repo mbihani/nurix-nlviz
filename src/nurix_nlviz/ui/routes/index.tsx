@@ -4,7 +4,7 @@ import { Pin, MessageSquare, X, Sparkles, BarChart3 } from 'lucide-react';
 import { APP_TITLE, APP_SUBTITLE } from '../config/branding';
 import { useGenieChat, type Message, type ChartEvent } from '../hooks/useGenieChat';
 import { ChatPanel } from '../components/ChatPanel';
-import { BENTO_GRID, getGridMetrics, PinnedCharts, rectsOverlap, Y_STEP } from '../components/PinnedCharts';
+import { BENTO_GRID, getGridMetrics, PinnedCharts, rectsOverlap, Y_STEP, type AskAboutVizTarget } from '../components/PinnedCharts';
 
 export const Route = createFileRoute('/')({
   component: App,
@@ -57,7 +57,7 @@ function findFreeGridSlot(pins: PinLayout[], canvasWidth: number) {
 
 function App() {
   const sessionId = getOrCreateSessionId();
-  const { messages, isStreaming, sendMessage, stop } = useGenieChat(sessionId);
+  const { messages, isStreaming, sendMessage, askAboutViz, stop } = useGenieChat(sessionId);
   const [pinnedMsgIds, setPinnedMsgIds] = useState<Set<string>>(new Set());
   const [pinRefresh, setPinRefresh] = useState(0);
   const [pinCount, setPinCount] = useState(0);
@@ -66,6 +66,7 @@ function App() {
   const panelWidthRef = useRef(panelWidth);
   panelWidthRef.current = panelWidth;
   const [newPinCount, setNewPinCount] = useState(0);
+  const [askAboutVizTarget, setAskAboutVizTarget] = useState<AskAboutVizTarget | null>(null);
 
   // Live rects of the rendered cards, reported by PinnedCharts. Held in a ref so
   // placement always reads the current layout — a state snapshot captured in
@@ -203,7 +204,7 @@ function App() {
             </button>
           </div>
         )}
-        <PinnedCharts sessionId={sessionId} canvasWidth={canvasWidth} refreshTrigger={pinRefresh} onLayoutsChange={handleLayoutsChange} />
+        <PinnedCharts sessionId={sessionId} canvasWidth={canvasWidth} refreshTrigger={pinRefresh} onLayoutsChange={handleLayoutsChange} onAskAboutViz={(target) => { setAskAboutVizTarget(target); setChatOpen(true); setNewPinCount(0); }} />
       </div>
 
       {/* Floating Ask button */}
@@ -229,7 +230,7 @@ function App() {
             <button onClick={() => setChatOpen(false)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(8,145,178,0.15)', borderRadius: '6px', color: '#64748B', cursor: 'pointer', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={13} /></button>
           </div>
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <ChatPanel messages={messages} isStreaming={isStreaming} onSend={sendMessage} onStop={stop} onPinChart={handlePinChart} onPinChartEvent={handlePinChartEvent} pinnedIds={pinnedMsgIds} sessionId={sessionId} />
+            <ChatPanel messages={messages} isStreaming={isStreaming} onSend={sendMessage} onStop={stop} onPinChart={handlePinChart} onPinChartEvent={handlePinChartEvent} pinnedIds={pinnedMsgIds} sessionId={sessionId} askAboutVizTarget={askAboutVizTarget} onCancelAskAboutViz={() => setAskAboutVizTarget(null)} onAskAboutViz={(question) => { if (!askAboutVizTarget) return; const target = askAboutVizTarget; setAskAboutVizTarget(null); void askAboutViz({ ...target, question }); }} />
           </div>
         </div>
       )}

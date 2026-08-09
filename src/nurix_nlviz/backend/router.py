@@ -1,6 +1,8 @@
 import json
+import traceback
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -14,7 +16,7 @@ from .agent import (
 from .chart_router import generate_chart_html
 from .config import AppConfig
 from .logger import logger
-from .models import ChatRequest, FilterEntry, FilterRequest, HealthOut, PinIn, PinOut, RefineRequest
+from .models import AskAboutVizRequest, ChatRequest, FilterEntry, FilterRequest, HealthOut, PinIn, PinOut, RefineRequest
 from . import db as db_module
 
 
@@ -82,6 +84,54 @@ async def refine_chart_endpoint(body: RefineRequest, config: ConfigDep):
     except Exception as exc:
         logger.error(f"Error refining chart: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@api.post("/ask_about_viz", operation_id="askAboutViz")
+async def ask_about_viz_endpoint(body: AskAboutVizRequest, config: ConfigDep):
+    """Proxy chart-specific questions to nurix-agent and preserve its SSE stream."""
+
+    async def event_generator():
+        upstream_sent_done = False
+        try:
+            # Token acquisition belongs inside the stream's try block so auth
+            # failures are delivered as a useful SSE error event.
+            token = await _get_token(config)
+            async with httpx.AsyncClient(timeout=120) as client:
+                async with client.stream(
+                    "POST",
+                    f"{config.nurix_agent_url}/ask_about_viz",
+                    json=body.model_dump(),
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "text/event-stream",
+                        "Content-Type": "application/json",
+                    },
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if line.startswith("data: "):
+                            yield line + "\n\n"
+                            try:
+                                event = json.loads(line[6:])
+                                if event.get("type") == "done":
+                                    upstream_sent_done = True
+                            except Exception:
+                                pass
+                        elif line.startswith(": ping"):
+                            continue
+            if not upstream_sent_done:
+                yield 'data: {"type":"done"}\n\n'
+        except Exception as exc:
+            logger.error(f"nurix-agent ask-about-viz proxy error: {exc}\n{traceback.format_exc()}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            if not upstream_sent_done:
+                yield 'data: {"type":"done"}\n\n'
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @api.get("/pins", response_model=list[PinOut], operation_id="getPins")

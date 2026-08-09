@@ -22,6 +22,19 @@ export type SSEEvent =
   | { type: 'rejected'; reason: string }
   | { type: 'error'; message: string };
 
+type AskAboutVizEvent =
+  | { type: 'insight_delta'; text: string }
+  | { type: 'insight'; text: string }
+  | { type: 'done' }
+  | { type: 'error'; message: string };
+
+export type AskAboutVizPayload = {
+  title: string;
+  chartHtml: string;
+  sql?: string | null;
+  question: string;
+};
+
 export type Message = {
   id: string;
   role: 'user' | 'assistant';
@@ -136,7 +149,86 @@ export function useGenieChat(sessionId: string) {
     setIsStreaming(false);
   }, []);
 
-  return { messages, isStreaming, sendMessage, stop };
+  const askAboutViz = useCallback(async ({ title, chartHtml, sql, question }: AskAboutVizPayload) => {
+    if (isStreaming) return;
+    const trimmedQuestion = question.trim().slice(0, 2000);
+    if (!trimmedQuestion) return;
+
+    const now = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const userMsg: Message = { id: `u-viz-${now}`, role: 'user', content: `About “${title}”: ${trimmedQuestion}` };
+    const assistantId = `a-viz-${now}`;
+    const assistantMsg: Message = { id: assistantId, role: 'assistant', content: '', isLoading: true };
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+
+    if (!sql?.trim()) {
+      setMessages((prev) => prev.map((m) => m.id === assistantId
+        ? { ...m, content: 'I can’t answer questions about this visualisation because its source SQL was not saved. Recreate and pin the chart with SQL, then try again.', isLoading: false }
+        : m));
+      return;
+    }
+
+    setIsStreaming(true);
+    abortRef.current = new AbortController();
+    try {
+      const response = await fetch('/api/ask_about_viz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chart_html: chartHtml.slice(0, 100000),
+          sql: sql.trim().slice(0, 10000),
+          question: trimmedQuestion,
+          session_id: sessionId,
+        }),
+        signal: abortRef.current.signal,
+      });
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`;
+        try { const body = await response.json(); detail = body.detail || detail; } catch { /* non-JSON error */ }
+        throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+      }
+      if (!response.body) throw new Error('The response stream was empty.');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+        const lines = buffer.split('\n');
+        buffer = done ? '' : (lines.pop() ?? '');
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6).trim()) as AskAboutVizEvent;
+            if (event.type === 'insight_delta') {
+              setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: m.content + event.text } : m));
+            } else if (event.type === 'insight') {
+              // Terminal text is cleaned and authoritative: replace raw deltas.
+              setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: event.text } : m));
+            } else if (event.type === 'error') {
+              throw new Error(event.message || 'The agent returned an error.');
+            }
+            // Unknown additive event types are intentionally ignored.
+          } catch (err) {
+            if (err instanceof SyntaxError) continue;
+            throw err;
+          }
+        }
+        if (done) break;
+      }
+    } catch (err: unknown) {
+      if ((err as Error).name !== 'AbortError') {
+        setMessages((prev) => prev.map((m) => m.id === assistantId
+          ? { ...m, content: `I couldn’t answer that visualisation question: ${(err as Error).message}`, isLoading: false }
+          : m));
+      }
+    } finally {
+      setIsStreaming(false);
+      setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, isLoading: false } : m));
+    }
+  }, [isStreaming, sessionId]);
+
+  return { messages, isStreaming, sendMessage, askAboutViz, stop };
 }
 
 function handleSSEEvent(
