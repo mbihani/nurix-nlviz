@@ -10,6 +10,10 @@ export type ChartEvent = {
   index?: number;
   total?: number;
   title?: string;
+  rows?: unknown[][];
+  mlflow_trace_id?: string;
+  conversation_id?: string;
+  response_id?: string;
 };
 
 export type SSEEvent =
@@ -49,6 +53,8 @@ export type Message = {
   columns?: { name: string; type: string }[];
   rows?: unknown[][];
   isLoading?: boolean;
+  deepResearch?: boolean;
+  researchRunId?: string;
 };
 
 export function useGenieChat(sessionId: string) {
@@ -72,6 +78,8 @@ export function useGenieChat(sessionId: string) {
         role: 'assistant',
         content: '',
         isLoading: true,
+        deepResearch,
+        researchRunId: deepResearch ? crypto.randomUUID() : undefined,
       };
 
       setMessages((prev) => [...prev, userMsg, assistantMsg]);

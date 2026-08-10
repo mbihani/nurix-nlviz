@@ -1,6 +1,5 @@
 """
-Database layer — supports both Lakebase (PostgreSQL via Databricks SDK) and
-SQLite as a fallback.  Backend is chosen via DB_TYPE env var.
+Database layer — supports Lakebase and explicitly configured SQLite.
 """
 
 import json
@@ -15,20 +14,36 @@ from .logger import logger
 _config: AppConfig | None = None
 _engine: Any = None  # SQLAlchemy Engine (Lakebase) or None (SQLite)
 _sqlite_path = "/tmp/nurix_pins.db"
+_configured_backend: str | None = None
+_resolved_backend: str | None = None
+_last_init_error: str | None = None
 
 
 def init_db(config: AppConfig) -> None:
-    global _config, _engine
+    global _config, _engine, _configured_backend, _resolved_backend, _last_init_error
     _config = config
+    _configured_backend = config.db_type
+    _resolved_backend = None
+    _last_init_error = None
 
     if config.db_type == "sqlite":
         _init_sqlite()
+        _resolved_backend = "sqlite"
     else:
         _init_lakebase(config)
 
 
+def get_db_status() -> dict[str, Any]:
+    return {
+        "configured": _configured_backend,
+        "resolved": _resolved_backend,
+        "pid": os.getpid(),
+        "last_init_error": _last_init_error,
+    }
+
+
 def _init_sqlite() -> None:
-    logger.info(f"Using SQLite at {_sqlite_path}")
+    logger.info(f"Resolved database backend=sqlite pid={os.getpid()} path={_sqlite_path}")
     con = sqlite3.connect(_sqlite_path)
     con.execute("""
         CREATE TABLE IF NOT EXISTS pinned_charts (
@@ -43,12 +58,20 @@ def _init_sqlite() -> None:
             x INTEGER DEFAULT 0,
             y INTEGER DEFAULT 0,
             width INTEGER DEFAULT 600,
-            height INTEGER DEFAULT 400
+            height INTEGER DEFAULT 400,
+            mlflow_trace_id TEXT,
+            conversation_id TEXT,
+            response_id TEXT,
+            deep_research BOOLEAN DEFAULT FALSE,
+            research_run_id TEXT
         )
     """)
     # idempotent: add columns if missing from older databases
     for col, typedef in [("x", "INTEGER DEFAULT 0"), ("y", "INTEGER DEFAULT 0"),
-                         ("width", "INTEGER DEFAULT 600"), ("height", "INTEGER DEFAULT 400")]:
+                         ("width", "INTEGER DEFAULT 600"), ("height", "INTEGER DEFAULT 400"),
+                         ("mlflow_trace_id", "TEXT"), ("conversation_id", "TEXT"),
+                         ("response_id", "TEXT"), ("deep_research", "INTEGER DEFAULT 0"),
+                         ("research_run_id", "TEXT")]:
         try:
             con.execute(f"ALTER TABLE pinned_charts ADD COLUMN {col} {typedef}")
         except Exception:
@@ -59,7 +82,7 @@ def _init_sqlite() -> None:
 
 
 def _init_lakebase(config: AppConfig) -> None:
-    global _engine
+    global _engine, _resolved_backend, _last_init_error
     try:
         from databricks.sdk import WorkspaceClient
         import sqlalchemy
@@ -97,15 +120,17 @@ def _init_lakebase(config: AppConfig) -> None:
         sqla_event.listen(_engine, "do_connect", _before_connect)
 
         _create_table_with_retry(_engine)
-        logger.info("Lakebase initialized successfully")
+        _resolved_backend = "lakebase"
+        logger.info(f"Resolved database backend=lakebase pid={os.getpid()}")
 
     except Exception as exc:
-        logger.warning(
-            f"Lakebase init failed ({exc}). Falling back to SQLite."
-        )
+        _last_init_error = f"{type(exc).__name__}: {exc}"
         _engine = None
-        _config.db_type = "sqlite"  # type: ignore[union-attr]
-        _init_sqlite()
+        logger.error(
+            f"Lakebase initialization failed pid={os.getpid()}: {_last_init_error}",
+            exc_info=True,
+        )
+        raise
 
 
 def _create_table_with_retry(engine) -> None:
@@ -124,7 +149,12 @@ def _create_table_with_retry(engine) -> None:
             x INTEGER DEFAULT 0,
             y INTEGER DEFAULT 0,
             width INTEGER DEFAULT 600,
-            height INTEGER DEFAULT 400
+            height INTEGER DEFAULT 400,
+            mlflow_trace_id TEXT,
+            conversation_id TEXT,
+            response_id TEXT,
+            deep_research BOOLEAN DEFAULT FALSE,
+            research_run_id TEXT
         )
     """)
 
@@ -133,12 +163,33 @@ def _create_table_with_retry(engine) -> None:
         "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS y INTEGER DEFAULT 0",
         "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS width INTEGER DEFAULT 600",
         "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS height INTEGER DEFAULT 400",
+        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS mlflow_trace_id TEXT",
+        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS conversation_id TEXT",
+        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS response_id TEXT",
+        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS deep_research BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS research_run_id TEXT",
     ]
 
     for attempt in range(3):
         try:
             with engine.begin() as conn:
                 conn.execute(ddl)
+                # CREATE TABLE IF NOT EXISTS cannot repair an existing JSONB column.
+                # The generated chart is raw HTML, so migrate it explicitly and
+                # idempotently before any inserts are accepted.
+                chart_config_type = conn.execute(sqlalchemy.text("""
+                    SELECT data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'pinned_charts'
+                      AND column_name = 'chart_config'
+                """)).scalar_one_or_none()
+                if chart_config_type != "text":
+                    conn.execute(sqlalchemy.text("""
+                        ALTER TABLE pinned_charts
+                        ALTER COLUMN chart_config TYPE TEXT
+                        USING chart_config::text
+                    """))
                 for stmt in alter_stmts:
                     try:
                         conn.execute(sqlalchemy.text(stmt))
@@ -171,6 +222,11 @@ def insert_pin(
     y: int = 0,
     width: int = 600,
     height: int = 400,
+    mlflow_trace_id: str | None = None,
+    conversation_id: str | None = None,
+    response_id: str | None = None,
+    deep_research: bool = False,
+    research_run_id: str | None = None,
 ) -> int:
     # chart_config is now an HTML string; accept str or dict (legacy)
     if isinstance(chart_config, dict):
@@ -183,9 +239,11 @@ def insert_pin(
         con = sqlite3.connect(_sqlite_path)
         cur = con.execute(
             """INSERT INTO pinned_charts
-               (session_id, question, sql_query, chart_type, chart_config, rows_json, x, y, width, height)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (session_id, question, sql_query, chart_type, chart_config_str, rows_str, x, y, width, height),
+               (session_id, question, sql_query, chart_type, chart_config, rows_json, x, y, width, height,
+                mlflow_trace_id, conversation_id, response_id, deep_research, research_run_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (session_id, question, sql_query, chart_type, chart_config_str, rows_str, x, y, width, height,
+             mlflow_trace_id, conversation_id, response_id, deep_research, research_run_id),
         )
         pin_id = cur.lastrowid
         con.commit()
@@ -198,9 +256,11 @@ def insert_pin(
             result = conn.execute(
                 sqlalchemy.text("""
                     INSERT INTO pinned_charts
-                    (session_id, question, sql_query, chart_type, chart_config, rows_json, x, y, width, height)
+                    (session_id, question, sql_query, chart_type, chart_config, rows_json, x, y, width, height,
+                     mlflow_trace_id, conversation_id, response_id, deep_research, research_run_id)
                     VALUES (:session_id, :question, :sql_query, :chart_type,
-                            :chart_config, :rows_json::jsonb, :x, :y, :width, :height)
+                            :chart_config, CAST(:rows_json AS jsonb), :x, :y, :width, :height,
+                            :mlflow_trace_id, :conversation_id, :response_id, :deep_research, :research_run_id)
                     RETURNING id
                 """),
                 {
@@ -214,6 +274,11 @@ def insert_pin(
                     "y": y,
                     "width": width,
                     "height": height,
+                    "mlflow_trace_id": mlflow_trace_id,
+                    "conversation_id": conversation_id,
+                    "response_id": response_id,
+                    "deep_research": deep_research,
+                    "research_run_id": research_run_id,
                 },
             )
             return result.scalar_one()
@@ -255,7 +320,8 @@ def list_pins(session_id: str) -> list[dict]:
             result = conn.execute(
                 sqlalchemy.text("""
                     SELECT id, session_id, question, sql_query, chart_type,
-                           chart_config, rows_json, created_at, x, y, width, height
+                           chart_config, rows_json, created_at, x, y, width, height,
+                           mlflow_trace_id, conversation_id, response_id, deep_research, research_run_id
                     FROM pinned_charts
                     WHERE session_id = :session_id
                     ORDER BY created_at DESC
@@ -291,7 +357,8 @@ def update_pin_layout(pin_id: int, x: int, y: int, width: int, height: int) -> d
                     SET x = :x, y = :y, width = :width, height = :height
                     WHERE id = :id
                     RETURNING id, session_id, question, sql_query, chart_type,
-                              chart_config, rows_json, created_at, x, y, width, height
+                              chart_config, rows_json, created_at, x, y, width, height,
+                              mlflow_trace_id, conversation_id, response_id, deep_research, research_run_id
                 """),
                 {"x": x, "y": y, "width": width, "height": height, "id": pin_id},
             )
@@ -330,7 +397,8 @@ def update_pin_config(pin_id: int, chart_config) -> dict | None:
                     SET chart_config = :chart_config
                     WHERE id = :id
                     RETURNING id, session_id, question, sql_query, chart_type,
-                              chart_config, rows_json, created_at, x, y, width, height
+                              chart_config, rows_json, created_at, x, y, width, height,
+                              mlflow_trace_id, conversation_id, response_id, deep_research, research_run_id
                 """),
                 {"chart_config": chart_config_str, "id": pin_id},
             )

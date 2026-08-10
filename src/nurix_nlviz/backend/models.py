@@ -15,6 +15,11 @@ class PinIn(BaseModel):
     y: int = 0
     width: int = 600
     height: int = 400
+    mlflow_trace_id: str | None = None
+    conversation_id: str | None = None
+    response_id: str | None = None
+    deep_research: bool = False
+    research_run_id: str | None = None
 
 
 class ChatRequest(BaseModel):
@@ -36,6 +41,11 @@ class PinOut(BaseModel):
     y: int = 0
     width: int = 600
     height: int = 400
+    mlflow_trace_id: str | None = None
+    conversation_id: str | None = None
+    response_id: str | None = None
+    deep_research: bool = False
+    research_run_id: str | None = None
 
 
 class HealthOut(BaseModel):

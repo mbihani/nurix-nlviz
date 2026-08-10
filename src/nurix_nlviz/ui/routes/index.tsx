@@ -104,7 +104,7 @@ function App() {
       }).catch(() => {});
   }, [sessionId]);
 
-  const doPinChart = useCallback(async (chartHtml: string, sql: string | null | undefined, question: string) => {
+  const doPinChart = useCallback(async (chart: ChartEvent, rows: unknown[][] | undefined, question: string, msg: Message) => {
     const slot = findFreeGridSlot(pinLayoutsRef.current, canvasWidth);
     try {
       const res = await fetch('/api/pins', {
@@ -113,10 +113,15 @@ function App() {
         body: JSON.stringify({
           session_id: sessionId,
           question,
-          sql_query: sql || null,
+          sql_query: chart.sql || null,
           chart_type: 'html',
-          chart_config: chartHtml,
-          rows_json: null,
+          chart_config: chart.html,
+          rows_json: chart.rows ?? rows ?? null,
+          mlflow_trace_id: chart.mlflow_trace_id ?? null,
+          conversation_id: chart.conversation_id ?? null,
+          response_id: chart.response_id ?? null,
+          deep_research: msg.deepResearch ?? false,
+          research_run_id: msg.researchRunId ?? null,
           x: Math.round(slot.x),
           y: Math.round(slot.y),
           width: Math.round(slot.width),
@@ -139,7 +144,7 @@ function App() {
     if (!msg.chart) return;
     // Use msg.id as the key to prevent double-pinning
     if (pinnedMsgIds.has(msg.id)) return;
-    doPinChart(msg.chart.html, msg.sql, msg.content || msg.chart.title || 'Visualization');
+    doPinChart(msg.chart, msg.rows, msg.content || msg.chart.title || 'Visualization', msg);
     setPinnedMsgIds(prev => new Set([...prev, msg.id]));
   }, [doPinChart, pinnedMsgIds]);
 
@@ -147,7 +152,7 @@ function App() {
     // Compose a per-chart key so each chart in a multi-chart message can pin once
     const key = `${msg.id}:${idx}`;
     if (pinnedMsgIds.has(key)) return;
-    doPinChart(event.html, msg.sql, msg.content || event.title || 'Visualization');
+    doPinChart(event, event.rows ?? msg.rows, msg.content || event.title || 'Visualization', msg);
     setPinnedMsgIds(prev => new Set([...prev, key]));
   }, [doPinChart, pinnedMsgIds]);
 

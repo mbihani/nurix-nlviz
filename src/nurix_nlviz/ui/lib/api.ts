@@ -38,8 +38,13 @@ export interface HealthOut {
 export interface PinIn {
   chart_config: string;
   chart_type: string;
+  conversation_id?: string | null;
+  deep_research?: boolean;
   height?: number;
+  mlflow_trace_id?: string | null;
   question: string;
+  research_run_id?: string | null;
+  response_id?: string | null;
   rows_json?: unknown[] | null;
   session_id: string;
   sql_query?: string | null;
@@ -51,10 +56,15 @@ export interface PinIn {
 export interface PinOut {
   chart_config: string;
   chart_type: string;
+  conversation_id?: string | null;
   created_at?: string | null;
+  deep_research?: boolean;
   height?: number;
   id: number;
+  mlflow_trace_id?: string | null;
   question: string;
+  research_run_id?: string | null;
+  response_id?: string | null;
   rows_json?: unknown[] | null;
   session_id: string;
   sql_query?: string | null;
@@ -140,6 +150,29 @@ export const chat = async (data: ChatRequest, options?: RequestInit): Promise<{ 
 
 export function useChat(options?: { mutation?: UseMutationOptions<{ data: unknown }, ApiError, ChatRequest> }) {
   return useMutation({ mutationFn: (data) => chat(data), ...options?.mutation });
+}
+
+export const dbStatus = async (options?: RequestInit): Promise<{ data: unknown }> => {
+  const res = await fetch("/api/db_status", { ...options, method: "GET" });
+  if (!res.ok) {
+    const body = await res.text();
+    let parsed: unknown;
+    try { parsed = JSON.parse(body); } catch { parsed = body; }
+    throw new ApiError(res.status, res.statusText, parsed);
+  }
+  return { data: await res.json() };
+};
+
+export const dbStatusKey = () => {
+  return ["/api/db_status"] as const;
+};
+
+export function useDbStatus<TData = { data: unknown }>(options?: { query?: Omit<UseQueryOptions<{ data: unknown }, ApiError, TData>, "queryKey" | "queryFn"> }) {
+  return useQuery({ queryKey: dbStatusKey(), queryFn: () => dbStatus(), ...options?.query });
+}
+
+export function useDbStatusSuspense<TData = { data: unknown }>(options?: { query?: Omit<UseSuspenseQueryOptions<{ data: unknown }, ApiError, TData>, "queryKey" | "queryFn"> }) {
+  return useSuspenseQuery({ queryKey: dbStatusKey(), queryFn: () => dbStatus(), ...options?.query });
 }
 
 export const applyFilter = async (data: FilterRequest, options?: RequestInit): Promise<{ data: unknown }> => {

@@ -42,6 +42,11 @@ async def health():
     return HealthOut(status="ok")
 
 
+@api.get("/db_status", operation_id="dbStatus")
+async def db_status():
+    return db_module.get_db_status()
+
+
 @api.post("/chat", operation_id="chat")
 async def chat(
     body: ChatRequest,
@@ -158,6 +163,11 @@ async def create_pin(body: PinIn):
             y=body.y,
             width=body.width,
             height=body.height,
+            mlflow_trace_id=body.mlflow_trace_id,
+            conversation_id=body.conversation_id,
+            response_id=body.response_id,
+            deep_research=body.deep_research,
+            research_run_id=body.research_run_id,
         )
         rows = db_module.list_pins(body.session_id)
         pin = next((r for r in rows if r["id"] == pin_id), None)
