@@ -158,17 +158,17 @@ def _create_table_with_retry(engine) -> None:
         )
     """)
 
-    alter_stmts = [
-        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS x INTEGER DEFAULT 0",
-        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS y INTEGER DEFAULT 0",
-        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS width INTEGER DEFAULT 600",
-        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS height INTEGER DEFAULT 400",
-        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS mlflow_trace_id TEXT",
-        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS conversation_id TEXT",
-        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS response_id TEXT",
-        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS deep_research BOOLEAN DEFAULT FALSE",
-        "ALTER TABLE pinned_charts ADD COLUMN IF NOT EXISTS research_run_id TEXT",
-    ]
+    alter_stmts = {
+        "x": "ALTER TABLE pinned_charts ADD COLUMN x INTEGER DEFAULT 0",
+        "y": "ALTER TABLE pinned_charts ADD COLUMN y INTEGER DEFAULT 0",
+        "width": "ALTER TABLE pinned_charts ADD COLUMN width INTEGER DEFAULT 600",
+        "height": "ALTER TABLE pinned_charts ADD COLUMN height INTEGER DEFAULT 400",
+        "mlflow_trace_id": "ALTER TABLE pinned_charts ADD COLUMN mlflow_trace_id TEXT",
+        "conversation_id": "ALTER TABLE pinned_charts ADD COLUMN conversation_id TEXT",
+        "response_id": "ALTER TABLE pinned_charts ADD COLUMN response_id TEXT",
+        "deep_research": "ALTER TABLE pinned_charts ADD COLUMN deep_research BOOLEAN DEFAULT FALSE",
+        "research_run_id": "ALTER TABLE pinned_charts ADD COLUMN research_run_id TEXT",
+    }
 
     for attempt in range(3):
         try:
@@ -190,11 +190,15 @@ def _create_table_with_retry(engine) -> None:
                         ALTER COLUMN chart_config TYPE TEXT
                         USING chart_config::text
                     """))
-                for stmt in alter_stmts:
-                    try:
+                existing_columns = set(conn.execute(sqlalchemy.text("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'pinned_charts'
+                """)).scalars())
+                for column, stmt in alter_stmts.items():
+                    if column not in existing_columns:
                         conn.execute(sqlalchemy.text(stmt))
-                    except Exception:
-                        pass  # column already exists
             logger.info("pinned_charts table ready")
             return
         except Exception as exc:
