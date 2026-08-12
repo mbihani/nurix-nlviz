@@ -44,9 +44,11 @@ interface PinnedChartsProps {
   onLayoutsChange?: (rects: PinRect[]) => void;
 }
 
-export const BENTO_GRID = { columns: 12, columnWidth: 96, rowHeight: 72, gutter: 12 } as const;
-const X_STEP = BENTO_GRID.columnWidth + BENTO_GRID.gutter;
-const Y_STEP = BENTO_GRID.rowHeight + BENTO_GRID.gutter;
+export const BENTO_GRID = { columns: 13, columnWidth: 96, rowHeight: 72, gutter: 12 } as const;
+export const X_STEP = BENTO_GRID.columnWidth + BENTO_GRID.gutter;
+export const Y_STEP = BENTO_GRID.rowHeight + BENTO_GRID.gutter;
+export const BENTO_GRID_WIDTH = BENTO_GRID.columns * BENTO_GRID.columnWidth
+  + (BENTO_GRID.columns - 1) * BENTO_GRID.gutter;
 const MIN_COLS = 3;
 const MIN_ROWS = 3;
 const MIN_W = MIN_COLS * BENTO_GRID.columnWidth + (MIN_COLS - 1) * BENTO_GRID.gutter;
@@ -63,6 +65,35 @@ const snapLayout = (layout: CardLayout): CardLayout => ({
   width: snapSpan(layout.width, BENTO_GRID.columnWidth, X_STEP, MIN_COLS),
   height: snapSpan(layout.height, BENTO_GRID.rowHeight, Y_STEP, MIN_ROWS),
 });
+
+export const rectsOverlap = (a: Omit<PinRect, 'id'> | PinRect, b: PinRect) => !(
+  a.x + a.width + BENTO_GRID.gutter <= b.x ||
+  b.x + b.width + BENTO_GRID.gutter <= a.x ||
+  a.y + a.height + BENTO_GRID.gutter <= b.y ||
+  b.y + b.height + BENTO_GRID.gutter <= a.y
+);
+
+/** Find the closest collision-free grid point, expanding in Manhattan rings. */
+const nearestFreeLayout = (layout: CardLayout, occupied: PinRect[]): CardLayout => {
+  if (!occupied.some((rect) => rectsOverlap(layout, rect))) return layout;
+  const startCol = Math.round(layout.x / X_STEP);
+  const startRow = Math.round(layout.y / Y_STEP);
+  for (let radius = 1; radius < 200; radius += 1) {
+    for (let dy = -radius; dy <= radius; dy += 1) {
+      const dx = radius - Math.abs(dy);
+      const candidates = dx === 0 ? [[startCol, startRow + dy]] : [
+        [startCol - dx, startRow + dy],
+        [startCol + dx, startRow + dy],
+      ];
+      for (const [col, row] of candidates) {
+        if (col < 0 || row < 0 || col * X_STEP + layout.width > BENTO_GRID_WIDTH) continue;
+        const candidate = { ...layout, x: col * X_STEP, y: row * Y_STEP };
+        if (!occupied.some((rect) => rectsOverlap(candidate, rect))) return candidate;
+      }
+    }
+  }
+  return layout;
+};
 
 // Cards stack inside a bounded band so they can never climb over the floating
 // Ask button (z 40) or the chat drawer / header (z 50). Order is tracked as a
@@ -241,7 +272,7 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides,
     <>
       <div
         className="relative w-full"
-        style={{ minHeight: `max(80vh, ${canvasMinH}px)` }}
+        style={{ width: BENTO_GRID_WIDTH, minWidth: BENTO_GRID_WIDTH, margin: '0 auto', minHeight: `max(80vh, ${canvasMinH}px)` }}
       >
         {pins.map((pin, idx) => {
           const overrideHtml = externalHtmlOverrides?.get(pin.id);
@@ -254,7 +285,12 @@ export function PinnedCharts({ sessionId, refreshTrigger, externalHtmlOverrides,
               zIndex={zForStackIndex(stack.indexOf(pin.id), stack.length)}
               onActivate={() => bringToFront(pin.id)}
               onLayoutChange={(l) => setCardLayouts((prev) => new Map(prev).set(pin.id, l))}
-              onLayoutCommit={(l) => persistLayout(pin.id, l)}
+              onLayoutCommit={(l, avoidCollisions) => {
+                const occupied = pins.filter((other) => other.id !== pin.id).map((other) => ({ id: other.id, ...getLayout(other) }));
+                const resolved = avoidCollisions ? nearestFreeLayout(l, occupied) : l;
+                setCardLayouts((prev) => new Map(prev).set(pin.id, resolved));
+                persistLayout(pin.id, resolved);
+              }}
               onDelete={() => handleDelete(pin.id)}
               onExpand={() => setExpanded(pin)}
               onRefine={(id, html) => { setRefiningPin({ id, html }); setRefineInput(''); setRefineError(''); }}
@@ -363,7 +399,7 @@ interface DraggableCardProps {
   /** Raise this card above its neighbours (drag start, resize start, any click). */
   onActivate: () => void;
   onLayoutChange: (l: CardLayout) => void;
-  onLayoutCommit: (l: CardLayout) => void;
+  onLayoutCommit: (l: CardLayout, avoidCollisions: boolean) => void;
   onDelete: () => void;
   onExpand: () => void;
   onRefine: (pinId: number, currentHtml: string) => void;
@@ -385,6 +421,7 @@ function DraggableCard({
   layoutRef.current = layout;
 
   const cleanupRef = useRef<(() => void) | null>(null);
+  const [isInteracting, setIsInteracting] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -392,63 +429,93 @@ function DraggableCard({
     };
   }, []);
 
-  const startDrag = (e: React.MouseEvent) => {
+  const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     onActivate();
+    const handle = e.currentTarget;
+    const pointerId = e.pointerId;
+    handle.setPointerCapture(pointerId);
+    setIsInteracting(true);
     const startX = e.clientX;
     const startY = e.clientY;
     const origX = layoutRef.current.x;
     const origY = layoutRef.current.y;
 
-    const onMove = (ev: MouseEvent) => {
+    let liveLayout = layoutRef.current;
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
       const nx = Math.max(0, origX + ev.clientX - startX);
       const ny = Math.max(0, origY + ev.clientY - startY);
-      onLayoutChange({ ...layoutRef.current, x: nx, y: ny });
+      liveLayout = { ...liveLayout, x: nx, y: ny };
+      layoutRef.current = liveLayout;
+      onLayoutChange(liveLayout);
     };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+    const removeListeners = () => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onEnd);
+      handle.removeEventListener('pointercancel', onEnd);
+      try { if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId); } catch { /* handle may have unmounted */ }
+    };
+    const onEnd = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      removeListeners();
       cleanupRef.current = null;
-      const snapped = snapLayout(layoutRef.current);
+      setIsInteracting(false);
+      const snapped = snapLayout(liveLayout);
       onLayoutChange(snapped);
-      onLayoutCommit(snapped);
+      onLayoutCommit(snapped, true);
     };
     cleanupRef.current = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      removeListeners();
     };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onEnd);
+    handle.addEventListener('pointercancel', onEnd);
   };
 
-  const startResize = (e: React.MouseEvent) => {
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     onActivate();
+    const handle = e.currentTarget;
+    const pointerId = e.pointerId;
+    handle.setPointerCapture(pointerId);
+    setIsInteracting(true);
     const startX = e.clientX;
     const startY = e.clientY;
     const origW = layoutRef.current.width;
     const origH = layoutRef.current.height;
 
-    const onMove = (ev: MouseEvent) => {
+    let liveLayout = layoutRef.current;
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
       const nw = Math.max(MIN_W, origW + ev.clientX - startX);
       const nh = Math.max(MIN_H, origH + ev.clientY - startY);
-      onLayoutChange({ ...layoutRef.current, width: nw, height: nh });
+      liveLayout = { ...liveLayout, width: nw, height: nh };
+      layoutRef.current = liveLayout;
+      onLayoutChange(liveLayout);
     };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+    const removeListeners = () => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onEnd);
+      handle.removeEventListener('pointercancel', onEnd);
+      try { if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId); } catch { /* handle may have unmounted */ }
+    };
+    const onEnd = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      removeListeners();
       cleanupRef.current = null;
-      const snapped = snapLayout(layoutRef.current);
+      setIsInteracting(false);
+      const snapped = snapLayout(liveLayout);
       onLayoutChange(snapped);
-      onLayoutCommit(snapped);
+      onLayoutCommit(snapped, false);
     };
     cleanupRef.current = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      removeListeners();
     };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onEnd);
+    handle.addEventListener('pointercancel', onEnd);
   };
 
   const actionBtnStyle: React.CSSProperties = {
@@ -495,7 +562,7 @@ function DraggableCard({
           cursor: 'grab',
           height: '34px',
         }}
-        onMouseDown={startDrag}
+        onPointerDown={startDrag}
       >
         <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>
           {pin.question}
@@ -525,7 +592,7 @@ function DraggableCard({
           card's own drag header above is the only chrome. */}
       <div className="flex-1 min-h-0 overflow-hidden">
         {pin.chart_config ? (
-          <ChartRenderer html={pin.chart_config as string} title={pin.question} hideTitle />
+          <ChartRenderer html={pin.chart_config as string} title={pin.question} hideTitle isInteracting={isInteracting} />
         ) : (
           <div className="h-full flex items-center justify-center text-xs" style={{ color: '#64748B' }}>
             No chart data
@@ -546,7 +613,7 @@ function DraggableCard({
           color: '#22D3EE',
           opacity: 0.5,
         }}
-        onMouseDown={startResize}
+        onPointerDown={startResize}
         className="flex items-end justify-end pb-1 pr-1"
         title="Resize"
       >

@@ -4,7 +4,7 @@ import { Pin, MessageSquare, X, Sparkles, BarChart3 } from 'lucide-react';
 import { APP_TITLE, APP_SUBTITLE } from '../config/branding';
 import { useGenieChat, type Message, type ChartEvent } from '../hooks/useGenieChat';
 import { ChatPanel } from '../components/ChatPanel';
-import { PinnedCharts } from '../components/PinnedCharts';
+import { BENTO_GRID, BENTO_GRID_WIDTH, PinnedCharts, rectsOverlap, X_STEP, Y_STEP } from '../components/PinnedCharts';
 
 export const Route = createFileRoute('/')({
   component: App,
@@ -20,24 +20,17 @@ function getOrCreateSessionId(): string {
 const MIN_PANEL_W = 340;
 const MAX_PANEL_W = 660;
 const DEFAULT_PANEL_W = 440;
-const GRID_COLUMN = 96;
-const GRID_ROW = 72;
-const GRID_GUTTER = 12;
-const GRID_X_STEP = GRID_COLUMN + GRID_GUTTER;
-const GRID_Y_STEP = GRID_ROW + GRID_GUTTER;
+const GRID_COLUMN = BENTO_GRID.columnWidth;
+const GRID_ROW = BENTO_GRID.rowHeight;
+const GRID_GUTTER = BENTO_GRID.gutter;
+const GRID_X_STEP = X_STEP;
+const GRID_Y_STEP = Y_STEP;
 const DEFAULT_COL_SPAN = 5;
 const DEFAULT_ROW_SPAN = 5;
 const DEFAULT_CARD_W = DEFAULT_COL_SPAN * GRID_COLUMN + (DEFAULT_COL_SPAN - 1) * GRID_GUTTER;
 const DEFAULT_CARD_H = DEFAULT_ROW_SPAN * GRID_ROW + (DEFAULT_ROW_SPAN - 1) * GRID_GUTTER;
 
 interface PinLayout { id: number; x: number; y: number; width: number; height: number }
-
-const rectsOverlap = (a: PinLayout | Omit<PinLayout, 'id'>, b: PinLayout) => !(
-  a.x + a.width + GRID_GUTTER <= b.x ||
-  b.x + b.width + GRID_GUTTER <= a.x ||
-  a.y + a.height + GRID_GUTTER <= b.y ||
-  b.y + b.height + GRID_GUTTER <= a.y
-);
 
 /**
  * Pick the first grid slot whose rect overlaps no existing pinned card.
@@ -96,7 +89,7 @@ function App() {
   }, [sessionId]);
 
   const doPinChart = useCallback(async (chartHtml: string, sql: string | null | undefined, question: string) => {
-    const canvasWidth = canvasRef.current?.clientWidth ?? DEFAULT_CARD_W;
+    const canvasWidth = Math.min(canvasRef.current?.clientWidth ?? DEFAULT_CARD_W, BENTO_GRID_WIDTH);
     const slot = findFreeGridSlot(pinLayoutsRef.current, canvasWidth);
     try {
       const res = await fetch('/api/pins', {
@@ -180,7 +173,7 @@ function App() {
       </header>
 
       {/* Canvas */}
-      <div ref={canvasRef} style={{ flex: 1, position: 'relative', overflow: 'auto', backgroundColor: '#020617', backgroundImage: 'linear-gradient(#0F172A 1px, transparent 1px), linear-gradient(90deg, #0F172A 1px, transparent 1px)', backgroundSize: `${GRID_X_STEP}px ${GRID_Y_STEP}px` }}>
+      <div ref={canvasRef} style={{ flex: 1, position: 'relative', overflow: 'auto', backgroundColor: '#020617', backgroundImage: 'linear-gradient(#0F172A 1px, transparent 1px), linear-gradient(90deg, #0F172A 1px, transparent 1px)', backgroundSize: `${GRID_X_STEP}px ${GRID_Y_STEP}px`, backgroundPositionX: `max(0px, calc((100% - ${BENTO_GRID_WIDTH}px) / 2))` }}>
         {pinCount === 0 && (
           <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none', userSelect: 'none' }}>
             <div style={{ width: '60px', height: '60px', margin: '0 auto 20px', background: 'rgba(8,145,178,0.1)', border: '1px solid rgba(8,145,178,0.2)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
