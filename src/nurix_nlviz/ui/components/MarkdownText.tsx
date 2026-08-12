@@ -206,10 +206,10 @@ const strongStyle: React.CSSProperties = { color: '#E2E8F0', fontWeight: 600 };
 const codeStyle: React.CSSProperties = {
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
   fontSize: '0.92em',
-  background: 'rgba(99,102,241,0.12)',
-  border: '1px solid rgba(99,102,241,0.2)',
+  background: 'rgba(8,145,178,0.12)',
+  border: '1px solid rgba(8,145,178,0.2)',
   borderRadius: '4px',
-  color: '#818CF8',
+  color: '#22D3EE',
   padding: '1px 4px',
 };
 
